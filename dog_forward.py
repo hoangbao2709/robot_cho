@@ -351,8 +351,9 @@ def on_key_release(event):
 
 
 # --- Bindings ---
-root.bind("<KeyPress>",   on_key_press)
-root.bind("<KeyRelease>", on_key_release)
+root.bind("<KeyPress>",   lambda e: on_key_press(e))
+root.bind("<KeyRelease>", lambda e: on_key_release(e))
+
 # Không cần <Motion> nữa, nhưng vẫn có thể để dự phòng nếu bạn muốn:
 # root.bind_all("<Motion>", lambda e: None)
 root.bind("<Configure>",  on_configure)
