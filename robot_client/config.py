@@ -1,14 +1,44 @@
 # -*- coding: utf-8 -*-
-# All tunables in one place
 
-CONTROL_URL = "http://192.168.137.195:9000/control"
-CAMERA_URL  = "http://192.168.137.195:9000/camera"
+import os
 
-REQUEST_TIMEOUT = 3
+import os
+from pymongo import MongoClient
+
+MONGODB_URI = os.environ.get("MONGODB_URI", "mongodb+srv://hoangbao27092004_db_user:baozzz123@cluster0.q7fvyyw.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0")
+
+client = MongoClient(MONGODB_URI, tlsAllowInvalidCertificates=True)
+col = client["robot"]["tunnels"]
+
+doc = col.find_one({"device_id": "rpi5-dogzilla"}, sort=[("updated_at", -1)])
+if not doc or "url" not in doc:
+    raise RuntimeError("Không tìm thấy URL trong MongoDB")
+
+BASE_URL = doc["url"].rstrip("/")
+print("BASE_URL =", BASE_URL)
+
+
+API_KEY = os.environ.get("DOGZILLA_API_KEY", None)
+
+REQUEST_HEADERS = {
+    "Content-Type": "application/json",
+    **({"X-API-Key": API_KEY} if API_KEY else {}),
+}
+
+VERIFY_SSL = os.environ.get("DOGZILLA_VERIFY_SSL", "true").lower() == "true"
+
+REQUEST_TIMEOUT = int(os.environ.get("DOGZILLA_TIMEOUT", "5")) 
+
+CONTROL_URL = f"{BASE_URL}/control"
+CAMERA_URL  = f"{BASE_URL}/camera"
+STATUS_URL  = f"{BASE_URL}/status"
+HEALTH_URL  = f"{BASE_URL}/health" 
+
+# ========= UI / điều khiển =========
 UI_FPS_MS = 33          
 
-TURN_SPEED = 40         
-DEADZONE   = 5          
+TURN_SPEED = 40
+DEADZONE   = 5
 
 TURN_SPEED_MIN = 15
 TURN_SPEED_MAX = 70
@@ -21,12 +51,14 @@ HOLD_MS = 120
 MOUSELOOK_HZ = 60
 REPEATER_HZ  = 12
 
+# ========= Z / posture =========
 Z_MIN      = 75
 Z_MAX      = 110
 Z_INITIAL  = 105
-SCROLL_Z_STEP = 1   
+SCROLL_Z_STEP = 1
 
-ATTITUDE_CMD       = "attitude"   
+# ========= Attitude =========
+ATTITUDE_CMD       = "attitude"
 ATTITUDE_AXIS_KEY  = "axis"
 ATTITUDE_VALUE_KEY = "value"
 AXIS_ROLL  = "r"
@@ -48,6 +80,6 @@ ROLL_MAX =  20
 YAW_MIN  = -11
 YAW_MAX  =  11
 
-ATT_HOLD_HZ = 60                    
-ROLL_YAW_RATE_DPS = 40.0             
-ATT_UPDATE_DELTA  = 1.0             
+ATT_HOLD_HZ = 60
+ROLL_YAW_RATE_DPS = 40.0
+ATT_UPDATE_DELTA  = 1.0
