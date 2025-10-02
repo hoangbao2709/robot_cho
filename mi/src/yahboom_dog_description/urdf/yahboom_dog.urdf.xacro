@@ -1,0 +1,303 @@
+<?xml version="1.0"?>
+<robot name="yahboom_dog"
+       xmlns:xacro="http://www.ros.org/wiki/xacro"
+       xmlns:ros2_control="http://ros.org/ros2_control">
+
+
+  
+  <xacro:property name="L"  value="${45.0/1000.0}"/>   
+  <xacro:property name="W"  value="${150.0/1000.0}"/> 
+  <xacro:property name="L1" value="${31.6/1000.0}"/>   
+  <xacro:property name="L2" value="${60.0/1000.0}"/>   
+  <xacro:property name="L3" value="${75.0/1000.0}"/>   
+
+  <xacro:property name="body_len" value="${W}"/>
+  <xacro:property name="body_wid" value="${L}"/>
+  <xacro:property name="body_hei" value="0.04"/>
+  <xacro:property name="joint_r"  value="0.01"/>
+  <xacro:property name="len_radius_joint"  value="0.02"/>
+
+
+  <material name="mat_body"><color rgba="0.7 0.1 0.1 1"/></material>
+  <material name="mat_leg"><color rgba="0.1 0.1 0.8 1"/></material>
+  <material name="mat_joint_root"><color rgba="0.9 0.2 0.2 1"/></material>
+  <material name="mat_joint_hip"><color rgba="0.2 0.8 0.2 1"/></material>
+  <material name="mat_joint_knee"><color rgba="0.9 0.5 0.1 1"/></material>
+
+
+  <link name="base_footprint"/>
+
+
+  <link name="base_link">
+    <visual>
+      <origin xyz="0 0 ${body_hei/2.0}" rpy="0 0 0"/>
+      <geometry><box size="${body_len} ${body_wid} ${body_hei}"/></geometry>
+      <material name="mat_body"/>
+    </visual>
+    <collision>
+      <origin xyz="0 0 ${body_hei/2.0}" rpy="0 0 0"/>
+      <geometry><box size="${body_len} ${body_wid} ${body_hei}"/></geometry>
+    </collision>
+    <inertial>
+      <mass value="2.0"/>
+      <inertia ixx="0.01" iyy="0.01" izz="0.01" ixy="0" ixz="0" iyz="0"/>
+    </inertial>
+  </link>
+
+
+  <joint name="base_joint" type="fixed">
+    <parent link="base_footprint"/>
+    <child  link="base_link"/>
+
+    <origin xyz="0 0 ${L2 + L3 + body_hei/2.0}" rpy="0 0 0"/>
+  </joint>
+
+
+  <xacro:macro name="leg" params="leg_name x_sign y_sign">
+    <xacro:property name="leg_offset" value="0.015"/> 
+    <xacro:property name="root_x" value="${x_sign*(body_len/2.0 - leg_offset)}"/>
+    <xacro:property name="root_y" value="${y_sign*(body_wid/2.0)}"/>
+    <xacro:property name="root_z" value="${body_hei/2.0}"/>
+
+
+    <link name="${leg_name}_root">
+      <visual>
+        <origin xyz="0 0 0" rpy="0 ${pi/2.0} 0"/>
+        <geometry><cylinder radius="${joint_r}" length="${len_radius_joint}"/></geometry>
+        <material name="mat_joint_root"/>
+      </visual>
+      <collision>
+        <origin xyz="0 0 0" rpy="0 ${pi/2.0} 0"/>
+        <geometry><cylinder radius="${joint_r}" length="${len_radius_joint}"/></geometry>
+      </collision>
+      <inertial>
+        <mass value="0.1"/>
+        <inertia ixx="1e-4" iyy="1e-4" izz="1e-4" ixy="0" ixz="0" iyz="0"/>
+      </inertial>
+    </link>
+
+    <joint name="${leg_name}_root_joint" type="revolute">
+      <parent link="base_link"/>
+      <child  link="${leg_name}_root"/>
+      <origin xyz="${root_x} ${root_y} ${root_z}" rpy="0 0 0"/>
+      <axis xyz="1 0 0"/>
+      <limit lower="${-35*pi/180.0}" upper="${35*pi/180.0}" effort="8" velocity="5"/>
+    </joint>
+
+
+    <link name="${leg_name}_basal">
+      <visual>
+        <origin xyz="0 ${y_sign*L1/2.0} 0"/>
+        <geometry><box size="0.01 ${L1} 0.01"/></geometry>
+        <material name="mat_leg"/>
+      </visual>
+      <collision>
+        <origin xyz="0 ${y_sign*L1/2.0} 0"/>
+        <geometry><box size="0.01 ${L1} 0.01"/></geometry>
+      </collision>
+      <inertial>
+        <mass value="0.1"/>
+        <inertia ixx="1e-4" iyy="1e-4" izz="1e-4" ixy="0" ixz="0" iyz="0"/>
+      </inertial>
+    </link>
+
+    <joint name="${leg_name}_basal_joint" type="fixed">
+      <parent link="${leg_name}_root"/>
+      <child  link="${leg_name}_basal"/>
+    </joint>
+
+
+    <link name="${leg_name}_hip">
+      <visual>
+        <origin xyz="0 0 0" rpy="${pi/2.0} 0 0"/>
+        <geometry><cylinder radius="${joint_r}" length="${len_radius_joint}"/></geometry>
+        <material name="mat_joint_hip"/>
+      </visual>
+      <collision>
+        <origin xyz="0 0 0" rpy="${pi/2.0} 0 0"/>
+        <geometry><cylinder radius="${joint_r}" length="${len_radius_joint}"/></geometry>
+      </collision>
+      <inertial>
+        <mass value="0.1"/>
+        <inertia ixx="1e-4" iyy="1e-4" izz="1e-4" ixy="0" ixz="0" iyz="0"/>
+      </inertial>
+    </link>
+
+    <joint name="${leg_name}_hip_joint" type="revolute">
+      <parent link="${leg_name}_basal"/>
+      <child  link="${leg_name}_hip"/>
+      <origin xyz="0 ${y_sign*L1} 0"/>
+      <axis xyz="0 ${-y_sign} 0"/>
+      <limit lower="${-90*pi/180.0}" upper="${90*pi/180.0}" effort="12" velocity="6"/>
+    </joint>
+
+
+    <link name="${leg_name}_thigh">
+      <visual>
+        <origin xyz="0 0 ${-L2/2.0}"/>
+        <geometry><box size="0.01 0.01 ${L2}"/></geometry>
+        <material name="mat_leg"/>
+      </visual>
+      <collision>
+        <origin xyz="0 0 ${-L2/2.0}"/>
+        <geometry><box size="0.01 0.01 ${L2}"/></geometry>
+      </collision>
+      <inertial>
+        <mass value="0.2"/>
+        <inertia ixx="5e-4" iyy="5e-4" izz="5e-4" ixy="0" ixz="0" iyz="0"/>
+      </inertial>
+    </link>
+
+    <joint name="${leg_name}_thigh_fix" type="fixed">
+      <parent link="${leg_name}_hip"/>
+      <child  link="${leg_name}_thigh"/>
+    </joint>
+
+
+    <link name="${leg_name}_knee">
+      <visual>
+        <origin xyz="0 0 0" rpy="${pi/2.0} 0 0"/>
+        <geometry><cylinder radius="${joint_r*0.93}" length="${len_radius_joint}"/></geometry>
+        <material name="mat_joint_knee"/>
+      </visual>
+      <collision>
+        <origin xyz="0 0 0" rpy="${pi/2.0} 0 0"/>
+        <geometry><cylinder radius="${joint_r*0.93}" length="${len_radius_joint}"/></geometry>
+      </collision>
+      <inertial>
+        <mass value="0.1"/>
+        <inertia ixx="1e-4" iyy="1e-4" izz="1e-4" ixy="0" ixz="0" iyz="0"/>
+      </inertial>
+    </link>
+
+    <joint name="${leg_name}_knee_joint" type="revolute">
+      <parent link="${leg_name}_thigh"/>
+      <child  link="${leg_name}_knee"/>
+      <origin xyz="0 0 ${-L2}"/>
+      <axis xyz="0 ${-y_sign} 0"/>
+      <limit lower="${-150*pi/180.0}" upper="0.0" effort="12" velocity="6"/>
+    </joint>
+
+
+    <link name="${leg_name}_calf">
+      <visual>
+        <origin xyz="0 0 ${-L3/2.0}"/>
+        <geometry><box size="0.01 0.01 ${L3}"/></geometry>
+        <material name="mat_leg"/>
+      </visual>
+      <collision>
+        <origin xyz="0 0 ${-L3/2.0}"/>
+        <geometry><box size="0.01 0.01 ${L3}"/></geometry>
+      </collision>
+      <inertial>
+        <mass value="0.2"/>
+        <inertia ixx="5e-4" iyy="5e-4" izz="5e-4" ixy="0" ixz="0" iyz="0"/>
+      </inertial>
+    </link>
+
+    <joint name="${leg_name}_calf_fix" type="fixed">
+      <parent link="${leg_name}_knee"/>
+      <child  link="${leg_name}_calf"/>
+    </joint>
+
+
+    <link name="${leg_name}_foot">
+      <visual>
+        <origin xyz="0 0 0" rpy="${pi/2.0} 0 0"/>
+        <geometry><cylinder radius="${joint_r*0.93}" length="${len_radius_joint}"/></geometry>
+        <material name="mat_joint_root"/>
+      </visual>
+      <collision>
+        <origin xyz="0 0 0" rpy="${pi/2.0} 0 0"/>
+        <geometry><cylinder radius="${joint_r*0.93}" length="${len_radius_joint}"/></geometry>
+      </collision>
+      <inertial>
+        <mass value="0.05"/>
+        <inertia ixx="5e-5" iyy="5e-5" izz="5e-5" ixy="0" ixz="0" iyz="0"/>
+      </inertial>
+    </link>
+
+    <joint name="${leg_name}_foot_joint" type="fixed">
+      <parent link="${leg_name}_calf"/>
+      <child  link="${leg_name}_foot"/>
+      <origin xyz="0 0 ${-L3}"/>
+    </joint>
+
+
+  </xacro:macro>
+
+
+  <xacro:leg leg_name="FR" x_sign="1"  y_sign="-1"/>
+  <xacro:leg leg_name="FL" x_sign="1"  y_sign="1"/>
+  <xacro:leg leg_name="RR" x_sign="-1" y_sign="-1"/>
+  <xacro:leg leg_name="RL" x_sign="-1" y_sign="1"/>
+
+
+
+   <ros2_control name="GazeboSystem" type="system">
+    <hardware>
+      <plugin>gazebo_ros2_control/GazeboSystem</plugin>
+    </hardware>
+    
+    <joint name="FR_root_joint">
+      <command_interface name="position"/>
+      <state_interface name="position"/>
+    </joint>
+    <joint name="FR_hip_joint">
+      <command_interface name="position"/>
+      <state_interface name="position"/>
+    </joint>
+    <joint name="FR_knee_joint">
+      <command_interface name="position"/>
+      <state_interface name="position"/>
+    </joint>
+        
+    <joint name="FL_root_joint">
+      <command_interface name="position"/>
+      <state_interface name="position"/>
+    </joint>
+    <joint name="FL_hip_joint">
+      <command_interface name="position"/>
+      <state_interface name="position"/>
+    </joint>
+    <joint name="FL_knee_joint">
+      <command_interface name="position"/>
+      <state_interface name="position"/>
+    </joint>
+            
+    <joint name="RR_root_joint">
+      <command_interface name="position"/>
+      <state_interface name="position"/>
+    </joint>
+    <joint name="RR_hip_joint">
+      <command_interface name="position"/>
+      <state_interface name="position"/>
+    </joint>
+    <joint name="RR_knee_joint">
+      <command_interface name="position"/>
+      <state_interface name="position"/>
+    </joint>
+                
+    <joint name="RL_root_joint">
+      <command_interface name="position"/>
+      <state_interface name="position"/>
+    </joint>
+    <joint name="RL_hip_joint">
+      <command_interface name="position"/>
+      <state_interface name="position"/>
+    </joint>
+    <joint name="RL_knee_joint">
+      <command_interface name="position"/>
+      <state_interface name="position"/>
+    </joint>
+  </ros2_control>
+  <gazebo>
+  <plugin name="gazebo_ros2_control" filename="libgazebo_ros2_control.so">
+    <parameters>/home/yahboom/mi/install/yahboom_dog_description/share/yahboom_dog_description/config/controllers.yaml</parameters>
+
+  </plugin>
+</gazebo>
+
+</robot>
+
+

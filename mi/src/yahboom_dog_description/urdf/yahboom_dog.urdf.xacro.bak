@@ -1,0 +1,315 @@
+<?xml version="1.0"?>
+<!-- Quadruped URDF (Xacro) built from the given geometry: 
+     L  = 45   mm  (left-right spacing between root joints)
+     W  = 150  mm  (front-rear spacing between root joints)
+     L1 = 31.6 mm  (base segment from root to hip)
+     L2 = 60   mm  (thigh)
+     L3 = 75   mm  (calf)
+
+  Assumptions (common in quadrupeds):
+  - 3 DOF per leg: root (abd/add, about +Y of base), hip pitch (about +Y), knee pitch (about +Y).
+  - Base link centered at body CoM; joint locations at the four corners at z = mid-height.
+  - Simple inertias using primitive shapes for stable simulation; tune later with CAD values.
+-->
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="quad_dog">
+
+  <!--==================== Parameters (meters, kilograms) ====================-->
+  <xacro:property name="L"  value="${45.0/1000.0}"/>   <!-- width (Y span)  -->
+  <xacro:property name="W"  value="${150.0/1000.0}"/>  <!-- length (X span) -->
+  <xacro:property name="L1" value="${31.6/1000.0}"/>   <!-- base segment    -->
+  <xacro:property name="L2" value="${60.0/1000.0}"/>   <!-- thigh           -->
+  <xacro:property name="L3" value="${75.0/1000.0}"/>   <!-- calf            -->
+
+  <!-- Body dimensions (choose practical thickness/scale; adjust as needed) -->
+  <xacro:property name="body_len" value="${W}"/>
+  <xacro:property name="body_wid" value="${L}"/>
+  <xacro:property name="body_hei" value="0.04"/>
+  <xacro:property name="wheel_r"  value="0.012"/> <!-- small cylinder radii for joint visuals -->
+
+  <!--============================= Base body ===============================-->
+  <link name="base_link">
+    <inertial>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <mass value="1.5"/>
+      <!-- approximate box inertia -->
+      <inertia ixx="${1.0/12.0*1.5*(pow(body_wid,2)+pow(body_hei,2))}"
+               iyy="${1.0/12.0*1.5*(pow(body_len,2)+pow(body_hei,2))}"
+               izz="${1.0/12.0*1.5*(pow(body_len,2)+pow(body_wid,2))}"
+               ixy="0" ixz="0" iyz="0"/>
+    </inertial>
+    <visual>
+      <origin xyz="0 0 ${body_hei/2.0}" rpy="0 0 0"/>
+      <geometry>
+        <box size="${body_len} ${body_wid} ${body_hei}"/>
+      </geometry>
+      <material name="body_red"><color rgba="0.7 0.1 0.1 1"/></material>
+    </visual>
+    <collision>
+      <origin xyz="0 0 ${body_hei/2.0}" rpy="0 0 0"/>
+      <geometry>
+        <box size="${body_len} ${body_wid} ${body_hei}"/>
+      </geometry>
+    </collision>
+  </link>
+
+  <!--========================= Leg macro (one side) ========================-->
+  <!-- leg_name: FR, FL, RR, RL
+       x_sign: +1 front (x=+W/2), -1 rear (x=-W/2)
+       y_sign: -1 left  (y=-L/2), +1 right (y=+L/2)  (REP-103: X forward, Y left; here we keep Y right positive for simplicity) -->
+  <xacro:macro name="leg" params="leg_name x_sign y_sign">
+    <!-- Root position at body side wall center height -->
+    <xacro:property name="root_x" value="${x_sign*body_len/2.0}"/>
+    <xacro:property name="root_y" value="${y_sign*body_wid/2.0}"/>
+    <xacro:property name="root_z" value="${body_hei/2.0}"/>
+
+    <!-- Root link (a short cylinder just as a visual stub) -->
+    <link name="${leg_name}_root">
+      <inertial>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <mass value="0.05"/>
+        <inertia ixx="1e-5" ixy="0" ixz="0" iyy="1e-5" iyz="0" izz="1e-5"/>
+      </inertial>
+      <visual>
+        <geometry><cylinder radius="${wheel_r}" length="${L1}"/></geometry>
+        <origin xyz="0 ${y_sign*L1/2.0} 0" rpy="${pi/2.0} 0 0"/>
+        <material name="joint_gray"><color rgba="0.6 0.6 0.6 1"/></material>
+      </visual>
+      <collision>
+        <geometry><cylinder radius="${wheel_r}" length="${L1}"/></geometry>
+        <origin xyz="0 ${y_sign*L1/2.0} 0" rpy="${pi/2.0} 0 0"/>
+      </collision>
+    </link>
+
+    <!-- Root joint: ab/adduction about +Y of base (lateral) -->
+    <joint name="${leg_name}_root_joint" type="revolute">
+      <parent link="base_link"/>
+      <child  link="${leg_name}_root"/>
+      <origin xyz="${root_x} ${root_y} ${root_z}" rpy="0 0 0"/>
+      <!-- Roll about X (sign per front/rear like sample: front -X, rear +X) -->
+      <axis xyz="${-x_sign} 0 0"/>
+      <limit lower="${-35*pi/180.0}" upper="${35*pi/180.0}" effort="8" velocity="5"/>
+      <dynamics damping="0.02" friction="0.0"/>
+    </joint>
+
+    <!-- Thigh link extends downward from hip joint along -Z; modeled as box -->
+    <link name="${leg_name}_thigh">
+      <inertial>
+        <origin xyz="0 0 ${-L2/2.0}" rpy="0 0 0"/>
+        <mass value="0.08"/>
+        <inertia ixx="1e-4" ixy="0" ixz="0" iyy="1e-4" iyz="0" izz="1e-4"/>
+      </inertial>
+      <visual>
+        <origin xyz="0 0 ${-L2/2.0}" rpy="0 0 0"/>
+        <geometry><box size="0.02 0.02 ${L2}"/></geometry>
+        <material name="leg_blue"><color rgba="0.1 0.1 0.8 1"/></material>
+      </visual>
+      <collision>
+        <origin xyz="0 0 ${-L2/2.0}" rpy="0 0 0"/>
+        <geometry><box size="0.02 0.02 ${L2}"/></geometry>
+      </collision>
+    </link>
+
+    <!-- Hip joint: pitch about +Y, placed at end of base segment L1 from root along +X (local) -->
+    <joint name="${leg_name}_hip_joint" type="revolute">
+      <parent link="${leg_name}_root"/>
+      <child  link="${leg_name}_thigh"/>
+      <origin xyz="0 ${y_sign*L1} 0" rpy="0 0 0"/>
+      <!-- Pitch about Y: left +Y, right -Y (matches sample) -->
+      <axis xyz="0 ${-y_sign} 0"/>
+      <limit lower="${-90*pi/180.0}" upper="${90*pi/180.0}" effort="12" velocity="6"/>
+      <dynamics damping="0.02"/>
+    </joint>
+      <limit lower="${-90*pi/180.0}" upper="${90*pi/180.0}" effort="12" velocity="6"/>
+      <dynamics damping="0.02"/>
+    </joint>
+
+    <!-- Calf link extends further downward from knee joint -->
+    <link name="${leg_name}_calf">
+      <inertial>
+        <origin xyz="0 0 ${-L3/2.0}" rpy="0 0 0"/>
+        <mass value="0.08"/>
+        <inertia ixx="1e-4" ixy="0" ixz="0" iyy="1e-4" iyz="0" izz="1e-4"/>
+      </inertial>
+      <visual>
+        <origin xyz="0 0 ${-L3/2.0}" rpy="0 0 0"/>
+        <geometry><box size="0.018 0.018 ${L3}"/></geometry>
+        <material name="leg_blue"/>
+      </visual>
+      <collision>
+        <origin xyz="0 0 ${-L3/2.0}" rpy="0 0 0"/>
+        <geometry><box size="0.018 0.018 ${L3}"/></geometry>
+      </collision>
+    </link>
+
+    <!-- Knee joint: pitch about +Y (parallel to hip) at end of thigh -->
+    <joint name="${leg_name}_knee_joint" type="revolute">
+      <parent link="${leg_name}_thigh"/>
+      <child  link="${leg_name}_calf"/>
+      <origin xyz="0 0 ${-L2}" rpy="0 0 0"/>
+      <!-- Knee pitch same sign as hip: left +Y, right -Y -->
+      <axis xyz="0 ${-y_sign} 0"/>
+      <limit lower="${-150*pi/180.0}" upper="${0.0}" effort="12" velocity="6"/>
+      <dynamics damping="0.02"/>
+    </joint>
+      <limit lower="${-150*pi/180.0}" upper="${0.0}" effort="12" velocity="6"/>
+      <dynamics damping="0.02"/>
+    </joint>
+  </xacro:macro>
+
+  <!--========================== Instantiate legs ===========================-->
+  <!-- Front Right (x=+W/2, y=-L/2) -->
+  <xacro:leg leg_name="FR" x_sign="1" y_sign="-1"/>
+  <!-- Front Left  (x=+W/2, y=+L/2) -->
+  <xacro:leg leg_name="FL" x_sign="1" y_sign="1"/>
+  <!-- Rear Right  (x=-W/2, y=-L/2) -->
+  <xacro:leg leg_name="RR" x_sign="-1" y_sign="-1"/>
+  <!-- Rear Left   (x=-W/2, y=+L/2) -->
+  <xacro:leg leg_name="RL" x_sign="-1" y_sign="1"/>
+
+  
+  <!-- ==================== ros2_control (simulation) ==================== -->
+  <ros2_control name="gazebo_system" type="system">
+    <hardware>
+      <plugin>gazebo_ros2_control/GazeboSystem</plugin>
+    </hardware>
+    <!-- Command/state interfaces for all 12 joints -->
+    <joint name="FR_root_joint">
+      <command_interface name="position"/>
+      <state_interface name="position"/>
+      <state_interface name="velocity"/>
+    </joint>
+    <joint name="FR_hip_joint">
+      <command_interface name="position"/>
+      <state_interface name="position"/>
+      <state_interface name="velocity"/>
+    </joint>
+    <joint name="FR_knee_joint">
+      <command_interface name="position"/>
+      <state_interface name="position"/>
+      <state_interface name="velocity"/>
+    </joint>
+
+    <joint name="FL_root_joint">
+      <command_interface name="position"/>
+      <state_interface name="position"/>
+      <state_interface name="velocity"/>
+    </joint>
+    <joint name="FL_hip_joint">
+      <command_interface name="position"/>
+      <state_interface name="position"/>
+      <state_interface name="velocity"/>
+    </joint>
+    <joint name="FL_knee_joint">
+      <command_interface name="position"/>
+      <state_interface name="position"/>
+      <state_interface name="velocity"/>
+    </joint>
+
+    <joint name="RR_root_joint">
+      <command_interface name="position"/>
+      <state_interface name="position"/>
+      <state_interface name="velocity"/>
+    </joint>
+    <joint name="RR_hip_joint">
+      <command_interface name="position"/>
+      <state_interface name="position"/>
+      <state_interface name="velocity"/>
+    </joint>
+    <joint name="RR_knee_joint">
+      <command_interface name="position"/>
+      <state_interface name="position"/>
+      <state_interface name="velocity"/>
+    </joint>
+
+    <joint name="RL_root_joint">
+      <command_interface name="position"/>
+      <state_interface name="position"/>
+      <state_interface name="velocity"/>
+    </joint>
+    <joint name="RL_hip_joint">
+      <command_interface name="position"/>
+      <state_interface name="position"/>
+      <state_interface name="velocity"/>
+    </joint>
+    <joint name="RL_knee_joint">
+      <command_interface name="position"/>
+      <state_interface name="position"/>
+      <state_interface name="velocity"/>
+    </joint>
+  </ros2_control>
+
+  <!-- Optional: transmissions for backward-compatibility / tools that expect them -->
+  <!-- In ROS 2 you can rely on <ros2_control> only. Keep transmissions if you need them. -->
+  <transmission name="trans_FR_root">
+    <type>transmission_interface/SimpleTransmission</type>
+    <actuator name="FR_root_motor">
+      <mechanicalReduction>1</mechanicalReduction>
+    </actuator>
+    <joint name="FR_root_joint"/>
+  </transmission>
+  <transmission name="trans_FR_hip">
+    <type>transmission_interface/SimpleTransmission</type>
+    <actuator name="FR_hip_motor"><mechanicalReduction>1</mechanicalReduction></actuator>
+    <joint name="FR_hip_joint"/>
+  </transmission>
+  <transmission name="trans_FR_knee">
+    <type>transmission_interface/SimpleTransmission</type>
+    <actuator name="FR_knee_motor"><mechanicalReduction>1</mechanicalReduction></actuator>
+    <joint name="FR_knee_joint"/>
+  </transmission>
+
+  <transmission name="trans_FL_root">
+    <type>transmission_interface/SimpleTransmission</type>
+    <actuator name="FL_root_motor"><mechanicalReduction>1</mechanicalReduction></actuator>
+    <joint name="FL_root_joint"/>
+  </transmission>
+  <transmission name="trans_FL_hip">
+    <type>transmission_interface/SimpleTransmission</type>
+    <actuator name="FL_hip_motor"><mechanicalReduction>1</mechanicalReduction></actuator>
+    <joint name="FL_hip_joint"/>
+  </transmission>
+  <transmission name="trans_FL_knee">
+    <type>transmission_interface/SimpleTransmission</type>
+    <actuator name="FL_knee_motor"><mechanicalReduction>1</mechanicalReduction></actuator>
+    <joint name="FL_knee_joint"/>
+  </transmission>
+
+  <transmission name="trans_RR_root">
+    <type>transmission_interface/SimpleTransmission</type>
+    <actuator name="RR_root_motor"><mechanicalReduction>1</mechanicalReduction></actuator>
+    <joint name="RR_root_joint"/>
+  </transmission>
+  <transmission name="trans_RR_hip">
+    <type>transmission_interface/SimpleTransmission</type>
+    <actuator name="RR_hip_motor"><mechanicalReduction>1</mechanicalReduction></actuator>
+    <joint name="RR_hip_joint"/>
+  </transmission>
+  <transmission name="trans_RR_knee">
+    <type>transmission_interface/SimpleTransmission</type>
+    <actuator name="RR_knee_motor"><mechanicalReduction>1</mechanicalReduction></actuator>
+    <joint name="RR_knee_joint"/>
+  </transmission>
+
+  <transmission name="trans_RL_root">
+    <type>transmission_interface/SimpleTransmission</type>
+    <actuator name="RL_root_motor"><mechanicalReduction>1</mechanicalReduction></actuator>
+    <joint name="RL_root_joint"/>
+  </transmission>
+  <transmission name="trans_RL_hip">
+    <type>transmission_interface/SimpleTransmission</type>
+    <actuator name="RL_hip_motor"><mechanicalReduction>1</mechanicalReduction></actuator>
+    <joint name="RL_hip_joint"/>
+  </transmission>
+  <transmission name="trans_RL_knee">
+    <type>transmission_interface/SimpleTransmission</type>
+    <actuator name="RL_knee_motor"><mechanicalReduction>1</mechanicalReduction></actuator>
+    <joint name="RL_knee_joint"/>
+  </transmission>
+
+  <!-- Gazebo (classic) plugin to bridge ros2_control in sim -->
+  <gazebo>
+    <plugin name="gazebo_ros2_control" filename="libgazebo_ros2_control.so"/>
+  </gazebo>
+
+</robot>
+
