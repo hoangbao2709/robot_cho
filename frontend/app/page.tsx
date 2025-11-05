@@ -64,7 +64,7 @@ export default function Home() {
             alt="File icon"
             width={16}
             height={16}
-          />
+          />x
           Learn
         </a>
         <a
