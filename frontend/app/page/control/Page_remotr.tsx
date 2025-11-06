@@ -1,8 +1,6 @@
 "use client";
 import { useState } from "react";
-
-// Single‑file React (TSX) page that mimics the provided UI using TailwindCSS
-// Drop into app/(dashboard)/remote/page.tsx or similar.
+import { HalfCircleJoystick } from "@/components/HalfCircleJoystick";
 
 export default function RemoteControlMode() {
     const [speed, setSpeed] = useState<"slow" | "normal" | "high">("normal");
@@ -50,6 +48,11 @@ export default function RemoteControlMode() {
         );
     }
 
+    const [isRunning, setIsRunning] = useState(false);
+
+    const handleToggleLidar = () => {
+        setIsRunning((prev) => !prev);
+    };
 
     return (
         <section className="min-h-screen w-full bg-[#0c0520] text-white p-6">
@@ -127,17 +130,42 @@ export default function RemoteControlMode() {
                     </Panel>
 
                     {/* Move */}
+                    {/* Move */}
                     <Panel title="Move">
-                        <div className="flex items-center gap-4">
-                            <Joystick />
+                        {/* Grid để tránh chồng lên nhau, joystick cố định bề rộng, nút nằm cột bên phải */}
+                        <div className="grid grid-cols-1 sm:grid-cols-[auto_1fr] gap-4 items-start">
+                            {/* Joystick cột trái */}
+                            <div className="justify-self-center sm:justify-self-start">
+                                <HalfCircleJoystick
+                                    width={260}
+                                    height={160}
+                                    rest="center"   // 👈 đảm bảo nút ở đúng giữa nửa hình tròn
+                                    onChange={({ angleDeg, power }) => { /* ... */ }}
+                                    onRelease={() => { /* ... */ }}
+                                />
+
+                            </div>
+
+                            {/* Nút điều khiển cột phải */}
                             <div className="grid grid-cols-2 gap-2">
-                                <Btn label="Turn left" />
-                                <Btn label="Turn right" />
-                                <Btn variant="danger" label="Stop" />
-                                <Btn variant="success" label="Start Lidar" />
+                                <Btn label="Turn left" onClick={() => {
+                                    // sendCmd(0, +0.8) // ví dụ quay trái
+                                }} />
+                                <Btn label="Turn right" onClick={() => {
+                                    // sendCmd(0, -0.8) // ví dụ quay phải
+                                }} />
+                                <Btn variant="danger" label="Stop" onClick={() => {
+                                    // sendCmd(0, 0)
+                                }} />
+                                <Btn
+                                    variant={isRunning ? "danger" : "success"}
+                                    label={isRunning ? "Stop Lidar" : "Start Lidar"}
+                                    onClick={handleToggleLidar}
+                                />
                             </div>
                         </div>
                     </Panel>
+
 
                     {/* Body Adjustment */}
                     <Panel title="Body Adjustment">
@@ -197,22 +225,16 @@ export default function RemoteControlMode() {
             </div>
 
             {/* Behavior control */}
-            <div className="mt-6 grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <div className="mt-6">
                 <Panel title="Behavior Control">
-                    <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
-                        {behavior1.map((b) => (
-                            <Btn key={b} label={b.replaceAll("_", " ")} />
-                        ))}
-                    </div>
-                </Panel>
-                <Panel title=" ">
-                    <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
-                        {behavior2.map((b) => (
+                    <div className="grid grid-cols-2 sm:grid-cols-10 gap-3">
+                        {[...behavior1, ...behavior2].map((b) => (
                             <Btn key={b} label={b.replaceAll("_", " ")} />
                         ))}
                     </div>
                 </Panel>
             </div>
+
         </section>
     );
 }
@@ -278,26 +300,20 @@ function SliderRow({ label, value, onChange }: { label: string; value: number; o
     );
 }
 
-function Joystick() {
+function Joystick({
+    onChange,
+    onRelease,
+}: {
+    onChange: (v: { angleDeg: number; power: number }) => void;
+    onRelease: () => void;
+}) {
     return (
-        <div className="relative w-28 h-28 rounded-full bg-white/5 border border-white/10 grid place-items-center">
-            <div className="w-3 h-3 rounded-full bg-white/60" />
-            <div className="absolute inset-0 pointer-events-none rounded-full border border-white/10" />
-            <div className="absolute -top-2 left-1/2 -translate-x-1/2">
-                <JoyBtn label="↑" />
-            </div>
-            <div className="absolute -bottom-2 left-1/2 -translate-x-1/2">
-                <JoyBtn label="↓" />
-            </div>
-            <div className="absolute top-1/2 -left-2 -translate-y-1/2">
-                <JoyBtn label="←" />
-            </div>
-            <div className="absolute top-1/2 -right-2 -translate-y-1/2">
-                <JoyBtn label="→" />
-            </div>
+        <div className="w-[220px]">
+            <HalfCircleJoystick onChange={onChange} onRelease={onRelease} />
         </div>
     );
 }
+
 
 function JoyBtn({ label }: { label: string }) {
     return (
