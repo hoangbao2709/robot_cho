@@ -42,9 +42,7 @@ export default function DashboardPage() {
 
   return (
     <section className="p-6">
-      <h1 className="mb-6 text-2xl font-bold">
-        <span className="text-pink-400">Connection</span> Manager
-      </h1>
+      <h1 className="gradient-title mb-6">Connection Manager</h1>
 
       <div className="mb-6 flex gap-2">
         <input
@@ -55,12 +53,7 @@ export default function DashboardPage() {
           onKeyDown={(e) => e.key === "Enter" && canAdd && handleAdd()}
           className="flex-1 rounded-xl bg-white/10 px-4 py-2 text-sm placeholder:text-white/60 focus:outline-none focus:ring-2 focus:ring-pink-400/60"
         />
-        <GradientButton
-          onClick={handleAdd}
-          disabled={!canAdd}
-        >
-          Add
-        </GradientButton>
+        <button className="gradient-button1">Add</button>
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
