@@ -24,3 +24,17 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+/* gradient style for title of paper */
+@layer utilities {
+  .gradient-title {
+    @apply text-3xl font-bold bg-gradient-to-r from-[#FD749B] via-[#00C2FF] to-[#00C2FF] bg-clip-text text-transparent;
+  }
+}
+
+/* gradian style for button1 - normal button*/
+@layer utilities {
+  .gradient-button1 {
+    @apply bg-gradient-to-r from-[#FD749B] to-[#281AC8] text-sm text-white font-medium shadow px-4 py-2 rounded-xl;
+  }
+}
