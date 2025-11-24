@@ -90,14 +90,11 @@ export default function DashboardPage() {
     setErrorMsg(null);
     setLoading(true);
 
-    // build addr dạng http://IP:9000 nếu user chỉ lưu IP
-    let dogzillaAddr = device.ip.trim();
-    if (!dogzillaAddr.startsWith("http")) {
-      dogzillaAddr = `http://${dogzillaAddr}:9000`;
-    }
+    // Chuẩn hoá IP → control & lidar URLs
+    const { control, lidar } = extractAddresses(device.ip);
 
     try {
-      const res = await connectRobot(dogzillaAddr);
+      const res = await connectRobot(control);
       const status: Device["status"] = res.connected ? "online" : "offline";
 
       // cập nhật status trong list
@@ -112,10 +109,11 @@ export default function DashboardPage() {
         return;
       }
 
-      // connect OK -> chuyển sang trang điều khiển, kèm địa chỉ Dogzilla
+      // ⚠️ Truyền đầy đủ 2 địa chỉ qua query để FE sử dụng
       router.push(
-        `/control?ip=${encodeURIComponent(dogzillaAddr)}`
+        `/control?ip=${encodeURIComponent(control)}&lidar=${encodeURIComponent(lidar)}`
       );
+
     } catch (e: any) {
       console.error("Connect error:", e);
       setDevices((prev) =>
@@ -128,6 +126,33 @@ export default function DashboardPage() {
       setLoading(false);
     }
   };
+
+  function extractAddresses(ipOrUrl: string) {
+    let raw = ipOrUrl.trim();
+
+    // Nếu user nhập "http://192.168.1.26:9000"
+    if (raw.startsWith("http://") || raw.startsWith("https://")) {
+      try {
+        const u = new URL(raw);
+        const host = u.hostname;
+        return {
+          ip: host,
+          control: `http://${host}:9000`,
+          lidar: `http://${host}:8080`,
+        };
+      } catch {
+        // nếu URL lỗi, fallback
+      }
+    }
+
+    // Nếu user nhập "192.168.1.26"
+    return {
+      ip: raw,
+      control: `http://${raw}:9000`,
+      lidar: `http://${raw}:8080`,
+    };
+  }
+
 
   return (
     <section className="p-6">

@@ -19,4 +19,5 @@ urlpatterns = [
     path('api/robots/<str:robot_id>/command/behavior/', BehaviorView.as_view(), name='robot-behavior'),
     path('api/robots/<str:robot_id>/command/lidar/', LidarView.as_view(), name='robot-lidar'),
     path('api/robots/<str:robot_id>/command/body_adjust/', BodyAdjustView.as_view(), name='robot-body'),
+    
 ]

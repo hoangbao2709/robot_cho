@@ -26,6 +26,22 @@ export default function header_control() {
             </div>
         );
     }
+    function Panel({
+        title,
+        children,
+    }: {
+        title: string;
+        children: React.ReactNode;
+    }) {
+        return (
+            <div className="rounded-2xl bg-white/5 border border-white/10 p-4">
+                <div className="text-sm mb-3 opacity-80">{title}</div>
+                {children}
+            </div>
+        );
+    }
+
+    
 
     return (
         <>
@@ -49,26 +65,7 @@ export default function header_control() {
             {/* Robot header row */}
             <div className="mt-4 grid grid-cols-1 lg:grid-cols-3 gap-6">
                 {/* Robot A + metrics */}
-                <div className="col-span-2 p-4 rounded-2xl bg-white/5 border border-white/10">
-                    <div className="flex flex-wrap items-center gap-6">
-                        <div className="text-lg font-semibold">🤖 Robot A</div>
-                        <div className="text-xs uppercase opacity-60">Robot Details</div>
-                    </div>
-                    <div className="mt-4 grid grid-cols-3 gap-4 text-sm">
-                        <Metric label="Location" value="25.23234, 19.76543" />
-                        <Metric label="Cleaning Progress" value={`80% (stopped)`} />
-                        <Metric label="Floor" value="1st" />
-                        <Metric label="Status" value="Resting" />
-                        <Metric label="Water Level" value="50%" />
-                        <Metric label="Battery" value="85%" />
-                    </div>
-                </div>
 
-                {/* Lidar map */}
-                <div className="p-4 rounded-2xl bg-white/5 border border-white/10">
-                    <div className="text-sm mb-2 opacity-80">Lidar map</div>
-                    <div className="h-40 rounded-xl bg-gradient-to-b from-slate-900 to-slate-800 border border-white/10" />
-                </div>
             </div>
         </>
     );

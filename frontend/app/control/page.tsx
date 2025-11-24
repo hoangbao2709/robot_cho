@@ -1,87 +1,53 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useSearchParams } from "next/navigation";
 import { HalfCircleJoystick } from "@/components/HalfCircleJoystick";
 import header_control from "@/components/header_control";
-
-const API_BASE =
-  process.env.NEXT_PUBLIC_API_BASE || "http://127.0.0.1:8000/control";
-const DEFAULT_DOG_SERVER =
-  process.env.NEXT_PUBLIC_DOGZILLA_BASE || "http://127.0.0.1:9000";
-const robotId = "robot-a";
-
-async function api<T = any>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(`${API_BASE}${path}`, {
-    ...init,
-    headers: {
-      "Content-Type": "application/json",
-      ...(init?.headers || {}),
-    },
-    cache: "no-store",
-  });
-  if (!res.ok) throw new Error(await res.text());
-  return res.json();
-}
-
-const RobotAPI = {
-  connect: (addr: string) =>
-    api(`/api/robots/${robotId}/connect/`, {
-      method: "POST",
-      body: JSON.stringify({ addr }),
-    }),
-  status: () => api(`/api/robots/${robotId}/status/`),
-  fpv: () => api(`/api/robots/${robotId}/fpv/`),
-  speed: (mode: "slow" | "normal" | "high") =>
-    api(`/api/robots/${robotId}/command/speed/`, {
-      method: "POST",
-      body: JSON.stringify({ mode }),
-    }),
-  move: (cmd: {
-    vx: number;
-    vy: number;
-    vz: number;
-    rx: number;
-    ry: number;
-    rz: number;
-  }) =>
-    api(`/api/robots/${robotId}/command/move/`, {
-      method: "POST",
-      body: JSON.stringify(cmd),
-    }),
-  lidar: (action: "start" | "stop") =>
-    api(`/api/robots/${robotId}/command/lidar/`, {
-      method: "POST",
-      body: JSON.stringify({ action }),
-    }),
-  posture: (name: string) =>
-    api(`/api/robots/${robotId}/command/posture/`, {
-      method: "POST",
-      body: JSON.stringify({ name }),
-    }),
-  behavior: (name: string) =>
-    api(`/api/robots/${robotId}/command/behavior/`, {
-      method: "POST",
-      body: JSON.stringify({ name }),
-    }),
-  body: (sl: {
-    tx: number;
-    ty: number;
-    tz: number;
-    rx: number;
-    ry: number;
-    rz: number;
-  }) =>
-    api(`/api/robots/${robotId}/command/body_adjust/`, {
-      method: "POST",
-      body: JSON.stringify(sl),
-    }),
-};
+import MouselookPad from "@/components/MouselookPad";
+import { RobotAPI, DEFAULT_DOG_SERVER, robotId } from "../lib/robotApi";
 
 export default function RemoteControlMode() {
   const searchParams = useSearchParams();
-  const ipParam = searchParams.get("ip"); // /control?ip=...
-  const DOG_SERVER = ipParam || DEFAULT_DOG_SERVER;
+  const ipParamRaw = searchParams.get("ip") || "";
+  const lidarParam = searchParams.get("lidar");
+
+  // ===== Chuẩn hoá ip -> DOG_SERVER (9000) & LIDAR_URL (8080) =====
+  const { DOG_SERVER, LIDAR_URL } = useMemo(() => {
+    // Nếu đã truyền sẵn ?lidar=... từ trang connection thì ưu tiên dùng luôn
+    if (lidarParam) {
+      return {
+        DOG_SERVER: ipParamRaw || DEFAULT_DOG_SERVER,
+        LIDAR_URL: lidarParam,
+      };
+    }
+
+    // Không có ip -> fallback default
+    if (!ipParamRaw) {
+      return {
+        DOG_SERVER: DEFAULT_DOG_SERVER,
+        LIDAR_URL:
+          process.env.NEXT_PUBLIC_LIDAR_URL || "http://127.0.0.1:8080",
+      };
+    }
+
+    let host = ipParamRaw.trim();
+
+    // Nếu user truyền full URL thì tách hostname ra
+    try {
+      if (host.startsWith("http://") || host.startsWith("https://")) {
+        const u = new URL(host);
+        host = u.hostname;
+      }
+    } catch {
+      // nếu parse URL lỗi thì giữ nguyên (coi như ip thuần)
+    }
+
+    return {
+      DOG_SERVER: `http://${host}:9000`,
+      LIDAR_URL: `http://${host}:8080`,
+    };
+  }, [ipParamRaw, lidarParam]);
 
   const [speed, setSpeed] = useState<"slow" | "normal" | "high">("normal");
   const [fps, setFps] = useState(30);
@@ -94,10 +60,12 @@ export default function RemoteControlMode() {
     ry: 0,
     rz: 0,
   });
-  const [isRunning, setIsRunning] = useState(false);
 
+  const [isRunning, setIsRunning] = useState(false); // Lidar
   const [connected, setConnected] = useState(false);
   const [connectError, setConnectError] = useState<string | null>(null);
+
+  const [mouseLook, setMouseLook] = useState(false);
 
   const postureBtns = ["Lie_Down", "Stand_Up", "Sit_Down", "Squat", "Crawl"];
   const axisMotionBtns = [
@@ -110,13 +78,12 @@ export default function RemoteControlMode() {
   const behavior1 = ["Wave_Hand", "Handshake", "Pray", "Stretch", "Swing"];
   const behavior2 = ["Wave_Body", "Handshake", "Pee", "Play_Ball", "Mark_Time"];
 
-  // ====== Kết nối Django -> Dogzilla Flask server + lấy stream_url ======
+  /* ================= KẾT NỐI BACKEND + FPV ================= */
   useEffect(() => {
     let stop = false;
 
     (async () => {
       try {
-        // 1) Gọi connect để set robot.addr trong Django
         const res = await RobotAPI.connect(DOG_SERVER);
         if (stop) return;
 
@@ -124,14 +91,14 @@ export default function RemoteControlMode() {
           setConnected(true);
           setConnectError(null);
 
-          // 2) Sau khi connect ok, gọi fpv để lấy stream_url
           try {
             const f = await RobotAPI.fpv();
             if (!stop) setStreamUrl(f?.stream_url || null);
           } catch (e) {
             console.error("FPV error:", e);
-            if (!stop)
+            if (!stop) {
               setConnectError("Không lấy được stream_url từ backend");
+            }
           }
         } else {
           setConnected(false);
@@ -146,19 +113,14 @@ export default function RemoteControlMode() {
           setConnectError(e?.message || "Lỗi kết nối");
         }
       }
-
-      // Nếu muốn đọc status định kỳ (fps, battery, ...) thì mở comment dưới
-      // try {
-      //   const s = await RobotAPI.status();
-      //   if (!stop && typeof s?.fps === "number") setFps(s.fps);
-      // } catch {}
     })();
 
+    // (Tuỳ chọn) đọc status định kỳ: FPS, battery...
     const iv = setInterval(async () => {
       try {
         // const s = await RobotAPI.status();
         // if (!stop && typeof s?.fps === "number") setFps(s.fps);
-      } catch {}
+      } catch { }
     }, 2000);
 
     return () => {
@@ -166,6 +128,8 @@ export default function RemoteControlMode() {
       clearInterval(iv);
     };
   }, [DOG_SERVER]);
+
+  /* ================= SPEED / LIDAR ================= */
 
   const changeSpeed = useCallback(async (m: "slow" | "normal" | "high") => {
     setSpeed(m);
@@ -176,7 +140,6 @@ export default function RemoteControlMode() {
     }
   }, []);
 
-  /* ====== LIDAR TOGGLE ====== */
   const handleToggleLidar = useCallback(async () => {
     const next = !isRunning;
     setIsRunning(next);
@@ -187,9 +150,11 @@ export default function RemoteControlMode() {
     }
   }, [isRunning]);
 
+  /* ================= JOYSTICK -> /command/move ================= */
+
   const joyRef = useRef({ vx: 0, rz: 0, active: false });
-  const maxV = 0.4;
-  const maxW = 1.2;
+  const maxV = 0.4; // m/s
+  const maxW = 1.2; // rad/s
 
   const sendMoveTick = useCallback(async () => {
     const { vx, rz, active } = joyRef.current;
@@ -197,12 +162,12 @@ export default function RemoteControlMode() {
     try {
       await RobotAPI.move({ vx, vy: 0, vz: 0, rx: 0, ry: 0, rz });
     } catch {
-      // im lặng, tránh spam console quá nhiều
+      // im lặng
     }
   }, []);
 
   useEffect(() => {
-    const iv = setInterval(sendMoveTick, 66);
+    const iv = setInterval(sendMoveTick, 66); // ~15 Hz
     return () => clearInterval(iv);
   }, [sendMoveTick]);
 
@@ -227,7 +192,7 @@ export default function RemoteControlMode() {
         ry: 0,
         rz: 0,
       });
-    } catch {}
+    } catch { }
   }, []);
 
   const turnLeft = () =>
@@ -237,21 +202,33 @@ export default function RemoteControlMode() {
   const stopMove = () =>
     RobotAPI.move({ vx: 0, vy: 0, vz: 0, rx: 0, ry: 0, rz: 0 });
 
-  const bodyTimer = useRef<NodeJS.Timeout | null>(null);
+  /* ================= BODY SLIDERS (debounce) ================= */
+
+  const bodyTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const setBody = (next: typeof sliders) => {
     setSliders(next);
     if (bodyTimer.current) clearTimeout(bodyTimer.current);
     bodyTimer.current = setTimeout(() => {
-      RobotAPI.body(next).catch(() => {});
+      RobotAPI.body(next).catch(() => { });
     }, 150);
   };
 
+  /* ====================================================== */
+
+  function Metric({ label, value }: { label: string; value: string }) {
+    return (
+      <div className="rounded-xl bg-white/5 border border-white/10 p-3">
+        <div className="text-[10px] uppercase opacity-60">{label}</div>
+        <div className="text-sm mt-1">{value}</div>
+      </div>
+    );
+  }
+
   return (
     <section className="min-h-screen w-full bg-[#0c0520] text-white p-6">
-      {/* Header */}
       {header_control()}
 
-      {/* Hiển thị trạng thái connect */}
+      {/* Trạng thái connect */}
       <div className="mt-2 text-sm">
         <span className={connected ? "text-emerald-400" : "text-rose-400"}>
           {connected ? "Connected" : "Not connected"}
@@ -262,11 +239,28 @@ export default function RemoteControlMode() {
         )}
       </div>
 
-      {/* Main content row */}
+      {/* Hàng chính: Robot info + FPV + panel bên phải */}
       <div className="mt-6 grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* FPV video */}
+        {/* Cột trái: Robot details + FPV + behaviors */}
         <div className="lg:col-span-2">
-          <div className="relative overflow-hidden rounded-2xl border border-white/10 bg-black">
+          {/* Robot info */}
+          <div className="col-span-2 p-4 rounded-2xl bg-white/5 border border-white/10">
+            <div className="flex flex-wrap items-center gap-6">
+              <div className="text-lg font-semibold">🤖 Robot A</div>
+              <div className="text-xs uppercase opacity-60">Robot Details</div>
+            </div>
+            <div className="mt-4 grid grid-cols-3 gap-4 text-sm">
+              <Metric label="Location" value="25.23234, 19.76543" />
+              <Metric label="Cleaning Progress" value={`80% (stopped)`} />
+              <Metric label="Floor" value="1st" />
+              <Metric label="Status" value="Resting" />
+              <Metric label="Water Level" value="50%" />
+              <Metric label="Battery" value="85%" />
+            </div>
+          </div>
+
+          {/* FPV */}
+          <div className="mt-4 relative overflow-hidden rounded-2xl border border-white/10 bg-black">
             <div className="absolute left-3 top-2 text-green-300 text-xl font-bold drop-shadow">
               FPS:{fps}
             </div>
@@ -276,10 +270,64 @@ export default function RemoteControlMode() {
               className="w-full aspect-video object-cover opacity-80"
             />
           </div>
+
+          {/* Postures & Axis Motion */}
+          <div className="mt-8 grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <Panel title="Basic Postures">
+              <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+                {postureBtns.map((b) => (
+                  <Btn
+                    key={b}
+                    label={b.replaceAll("_", " ")}
+                    onClick={() => RobotAPI.posture(b)}
+                  />
+                ))}
+              </div>
+            </Panel>
+
+            <Panel title="Axis Motion">
+              <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+                {axisMotionBtns.map((b) => (
+                  <Btn
+                    key={b}
+                    label={b.replaceAll("_", " ")}
+                    onClick={() => RobotAPI.behavior(b)}
+                  />
+                ))}
+              </div>
+            </Panel>
+          </div>
+
+          {/* Behaviors */}
+          <div className="mt-6">
+            <Panel title="Behavior Control">
+              <div className="grid grid-cols-2 sm:grid-cols-10 gap-3">
+                {[...behavior1, ...behavior2].map((b, i) => (
+                  <Btn
+                    key={`${b}-${i}`}
+                    label={b.replaceAll("_", " ")}
+                    onClick={() => RobotAPI.behavior(b)}
+                  />
+                ))}
+              </div>
+            </Panel>
+          </div>
         </div>
 
-        {/* Right control panel */}
+        {/* Cột phải: Lidar + Speed + Move + MouseLook + Body */}
         <div className="space-y-6">
+          {/* Lidar map */}
+          <div className="p-4 rounded-2xl bg-white/5 border border-white/10">
+            <div className="text-sm mb-2 opacity-80">Lidar map</div>
+            <div className="relative pt-[100%] bg-black rounded-xl overflow-hidden">
+              <iframe
+                src={LIDAR_URL}
+                className="absolute inset-0 w-full h-full border-0"
+                loading="lazy"
+              />
+            </div>
+          </div>
+
           {/* Speed */}
           <Panel title="Speed">
             <div className="flex gap-3">
@@ -294,9 +342,9 @@ export default function RemoteControlMode() {
             </div>
           </Panel>
 
+          {/* Move */}
           <Panel title="Move">
             <div className="grid grid-cols-1 sm:grid-cols-[auto_1fr] gap-4 items-start">
-              {/* Joystick */}
               <div className="justify-self-center sm:justify-self-start cursor-pointer">
                 <HalfCircleJoystick
                   width={260}
@@ -306,19 +354,30 @@ export default function RemoteControlMode() {
                   onRelease={onJoyRelease}
                 />
               </div>
-
-              <div className="grid grid-cols-2 gap-2">
-                <Btn label="Turn left" onClick={turnLeft} />
-                <Btn label="Turn right" onClick={turnRight} />
-                <Btn variant="danger" label="Stop" onClick={stopMove} />
-                <Btn
-                  variant={isRunning ? "danger" : "success"}
-                  label={isRunning ? "Stop Lidar" : "Start Lidar"}
-                  onClick={handleToggleLidar}
-                />
+              <div>
+                <div className="grid grid-cols-2 gap-2">
+                  <Btn label="Turn left" onClick={turnLeft} />
+                  <Btn label="Turn right" onClick={turnRight} />
+                  <Btn variant="danger" label="Stop" onClick={stopMove} />
+                  <Btn
+                    variant={isRunning ? "danger" : "success"}
+                    label={isRunning ? "Stop Lidar" : "Start Lidar"}
+                    onClick={handleToggleLidar}
+                  />
+                </div>
+                <div className="flex justify-between pt-7 items-center">
+                  <div className="text-xl opacity-70">
+                    Toggle để bật/tắt điều khiển bằng chuột.
+                  </div>
+                  <MouseLookToggle
+                    on={mouseLook}
+                    onToggle={() => setMouseLook((prev) => !prev)}
+                  />
+                </div>
               </div>
             </div>
           </Panel>
+
 
           {/* Body Adjustment */}
           <Panel title="Body Adjustment">
@@ -356,51 +415,13 @@ export default function RemoteControlMode() {
         </div>
       </div>
 
-      {/* Bottom control grids */}
-      <div className="mt-8 grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Basic Postures */}
-        <Panel title="Basic Postures">
-          <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
-            {postureBtns.map((b) => (
-              <Btn
-                key={b}
-                label={b.replaceAll("_", " ")}
-                onClick={() => RobotAPI.posture(b)}
-              />
-            ))}
-          </div>
-        </Panel>
-
-        <Panel title="Axis Motion">
-          <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
-            {axisMotionBtns.map((b) => (
-              <Btn
-                key={b}
-                label={b.replaceAll("_", " ")}
-                onClick={() => RobotAPI.behavior(b)}
-              />
-            ))}
-          </div>
-        </Panel>
-      </div>
-
-      {/* Behavior control */}
-      <div className="mt-6">
-        <Panel title="Behavior Control">
-          <div className="grid grid-cols-2 sm:grid-cols-10 gap-3">
-            {[...behavior1, ...behavior2].map((b, i) => (
-              <Btn
-                key={`${b}-${i}`}
-                label={b.replaceAll("_", " ")}
-                onClick={() => RobotAPI.behavior(b)}
-              />
-            ))}
-          </div>
-        </Panel>
-      </div>
+      {/* Overlay điều khiển chuột + WASD */}
+      <MouselookPad robotId={robotId} enabled={mouseLook} />
     </section>
   );
 }
+
+/* ================= UI HELPERS ================= */
 
 function Panel({
   title,
@@ -430,11 +451,10 @@ function Chip({
     <button
       onClick={onClick}
       className={`px-4 py-1 rounded-xl text-sm border transition cursor-pointer
-      ${
-        active
+      ${active
           ? "bg-indigo-500/30 border-indigo-400/40"
           : "bg-white/5 border-white/10 hover:bg-white/10"
-      }`}
+        }`}
     >
       {label}
     </button>
@@ -466,7 +486,6 @@ function Btn({
       "hover:bg-emerald-400 hover:border-emerald-200 hover:text-white " +
       "hover:shadow-lg hover:shadow-emerald-500/40 hover:scale-105 active:scale-95";
   } else {
-    // default
     styles =
       "bg-white/10 border-white/30 text-white " +
       "hover:bg-white hover:text-[#0c0520] hover:border-white " +
@@ -479,8 +498,6 @@ function Btn({
     </button>
   );
 }
-
-
 
 function SliderRow({
   label,
@@ -505,3 +522,29 @@ function SliderRow({
     </div>
   );
 }
+
+function MouseLookToggle({
+  on,
+  onToggle,
+}: {
+  on: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <button
+      onClick={onToggle}
+      className={`w-11 h-7 rounded-full border border-violet-400/50 p-1 grid items-center transition ${on ? "bg-violet-500/30" : "bg-transparent"
+        }`}
+      aria-label="Toggle MouseLook"
+    >
+      <div
+        className={`w-5 h-5 rounded-full border border-violet-300/60 bg-white/10 transition-transform ${on ? "translate-x-4" : ""
+          }`}
+      />
+    </button>
+  );
+}
+
+
+
+
