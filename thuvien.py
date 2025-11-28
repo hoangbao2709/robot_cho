@@ -207,16 +207,16 @@ class DOGZILLA():
     def back(self, step):
         self.move_x(-abs(step))
 
-    def left(self, step):
-        self.move_y(abs(step))
+    def left(self, step): #đi bên trái theo chiều ngang
+        self.move_y(abs(step)) 
 
-    def right(self, step):
+    def right(self, step): #đi bên phải theo chiều ngang
         self.move_y(-abs(step))
 
-    def turnleft(self, step):
+    def turnleft(self, step):  #xoay bên trái 
         self.turn(abs(step))
 
-    def turnright(self, step):
+    def turnright(self, step):  #xoay bên phải 
         self.turn(-abs(step))
 
     def __translation(self, direction, data):

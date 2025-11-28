@@ -93,3 +93,9 @@ class BodyAdjustView(APIView):
         """
         ROSClient(robot_id).body_adjust(request.data)
         return Response({"ok": True})
+    
+class StabilizingModeView(APIView):
+    def post(self, request, robot_id):
+        action = request.data.get("action")  
+        ROSClient(robot_id).stabilizing_mode(action)
+        return Response({"ok": True})

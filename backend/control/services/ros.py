@@ -274,3 +274,19 @@ class ROSClient:
         payload: Dict[str, Any] = {"command": "body_adjust"}
         payload.update(sliders)
         self._post_control(payload)
+        
+    def stabilizing_mode(self, action: str) -> None:
+        """
+        action: 'on' | 'off' | 'toggle'
+        Gửi sang Flask: {"command": "stabilizing_mode", "action": action}
+        """
+
+        assert action in ("on", "off", "toggle")
+        payload: Dict[str, Any] = {
+            "command": "stabilizing_mode",
+            "action": action,
+        }
+        self._post_control(payload)
+
+
+

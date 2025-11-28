@@ -2,7 +2,7 @@ from django.urls import path
 from .views import (
     RobotListView, RobotStatusView, ConnectView, FPVView,
     MoveCommandView, SpeedModeView, PostureView, BehaviorView,
-    LidarView, BodyAdjustView
+    LidarView, BodyAdjustView, StabilizingModeView
 )
 
 urlpatterns = [
@@ -19,4 +19,7 @@ urlpatterns = [
     path('api/robots/<str:robot_id>/command/behavior/', BehaviorView.as_view(), name='robot-behavior'),
     path('api/robots/<str:robot_id>/command/lidar/', LidarView.as_view(), name='robot-lidar'),
     path('api/robots/<str:robot_id>/command/body_adjust/', BodyAdjustView.as_view(), name='robot-body'),
+    path("api/robots/<str:robot_id>/command/stabilizing_mode/", StabilizingModeView.as_view(),name="stabilizing_mode", ),
+
+
 ]
