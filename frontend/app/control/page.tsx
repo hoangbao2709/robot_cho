@@ -36,7 +36,7 @@ export default function ManualControlPage() {
         {mode === "remote" ? (
           <RemoteView onEmergencyStop={robotStop} />
         ) : (
-          <FPVView streamUrl={fpv.stream_url} fps={fpv.fps ?? 30} />
+          <FPVView fps={fpv.fps ?? 30} />
         )}
       </div>
     </section>
