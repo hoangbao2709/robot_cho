@@ -1,13 +1,16 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useSearchParams } from "next/navigation";
 import { HalfCircleJoystick } from "@/components/HalfCircleJoystick";
-import header_control from "@/components/header_control";
-
+import HeaderControl from "@/components/header_control";
 const API_BASE =
   process.env.NEXT_PUBLIC_API_BASE || "http://127.0.0.1:8000/control";
 const DEFAULT_DOG_SERVER =
+  process.env.NEXT_PUBLIC_DOGZILLA_BASE || "http://127.0.0.1:9000";
+
+
+const LIDAR_VIEW_URL =
   process.env.NEXT_PUBLIC_DOGZILLA_BASE || "http://127.0.0.1:9000";
 const robotId = "robot-a";
 
@@ -86,12 +89,27 @@ const RobotAPI = {
 
 export default function RemoteView({
   onEmergencyStop,
+  mode,
+  toggleMode
 }: {
   onEmergencyStop?: () => void;
+  mode: "remote" | "fpv";
+  toggleMode: () => void;
 }) {
   const searchParams = useSearchParams();
   const ipParam = searchParams.get("ip"); // /control?ip=...
   const DOG_SERVER = ipParam || DEFAULT_DOG_SERVER;
+  // Lidar viewer URL: cùng IP với DOG_SERVER nhưng port 8080
+  const lidarUrl = useMemo(() => {
+    try {
+      const url = new URL(DOG_SERVER);
+      url.port = "8080";          // đổi port
+      return url.toString();      // ví dụ: http://192.168.1.167:8080/
+    } catch {
+      // fallback nếu DOG_SERVER không phải URL hợp lệ
+      return "http://127.0.0.1:8080";
+    }
+  }, [DOG_SERVER]);
 
   const [speed, setSpeed] = useState<"slow" | "normal" | "high">("normal");
   const [fps, setFps] = useState(30);
@@ -278,7 +296,9 @@ export default function RemoteView({
   return (
     <section className="min-h-screen w-full bg-[#0c0520] text-white p-6">
       {/* Hiển thị trạng thái connect */}
+
       <div className="mt-2 text-sm">
+
         <span className={connected ? "text-emerald-400" : "text-rose-400"}>
           {connected ? "Connected" : "Not connected"}
         </span>
@@ -294,6 +314,8 @@ export default function RemoteView({
       <div className="mt-6 grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* FPV video */}
         <div className="lg:col-span-2">
+          <HeaderControl mode={mode} onToggle={toggleMode} />
+
           <div className="relative overflow-hidden rounded-2xl border border-white/10 bg-black">
             <div className="absolute left-3 top-2 text-green-300 text-xl font-bold drop-shadow">
               FPS:{fps}
@@ -304,10 +326,89 @@ export default function RemoteView({
               className="w-full aspect-video object-cover opacity-80"
             />
           </div>
+          {/* Bottom control grids */}
+          <div className="mt-8 grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* Basic Postures */}
+            <Panel title="Basic Postures">
+              <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+                {postureBtns.map((b) => (
+                  <Btn
+                    key={b}
+                    label={b.replaceAll("_", " ")}
+                    onClick={() => RobotAPI.posture(b)}
+                  />
+                ))}
+              </div>
+            </Panel>
+
+            <Panel title="Axis Motion">
+              <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+                {axisMotionBtns.map((b) => (
+                  <Btn
+                    key={b}
+                    label={b.replaceAll("_", " ")}
+                    onClick={() => RobotAPI.behavior(b)}
+                  />
+                ))}
+              </div>
+            </Panel>
+          </div>
+
+          {/* Behavior control */}
+          <div className="mt-6">
+            <Panel title="Behavior Control">
+              <div className="grid grid-cols-2 sm:grid-cols-10 gap-3">
+                {[...behavior1, ...behavior2].map((b, i) => (
+                  <Btn
+                    key={`${b}-${i}`}
+                    label={b.replaceAll("_", " ")}
+                    onClick={() => RobotAPI.behavior(b)}
+                  />
+                ))}
+              </div>
+            </Panel>
+          </div>
         </div>
+
+
 
         {/* Right control panel */}
         <div className="space-y-6">
+          {/* Lidar map */}
+          <div className="p-4 rounded-2xl bg-white/5 border border-white/10">
+            <div className="text-sm mb-2 opacity-80">Lidar map</div>
+
+            <div
+              className="
+                relative
+                w-full
+                max-w-md
+                aspect-square
+                rounded-xl
+                overflow-hidden
+                border border-white/10
+                bg-black
+              "
+            >
+              <div
+                className="
+                  absolute inset-0
+                  origin-top-left
+                  scale-[0.6]       /* GIẢM TỶ LỆ 35% → chỉnh theo ý bạn */
+                "
+                style={{ width: "600%", height: "600%" }}
+              >
+                <iframe
+                  src={lidarUrl}
+                  className="w-full h-full border-0"
+                />
+              </div>
+            </div>
+          </div>
+
+
+
+
           {/* Speed */}
           <Panel title="Speed">
             <div className="flex gap-3">
@@ -387,51 +488,11 @@ export default function RemoteView({
               onChange={(v) => setBody({ ...sliders, rz: v })}
             />
           </Panel>
+
         </div>
       </div>
 
-      {/* Bottom control grids */}
-      <div className="mt-8 grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Basic Postures */}
-        <Panel title="Basic Postures">
-          <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
-            {postureBtns.map((b) => (
-              <Btn
-                key={b}
-                label={b.replaceAll("_", " ")}
-                onClick={() => RobotAPI.posture(b)}
-              />
-            ))}
-          </div>
-        </Panel>
 
-        <Panel title="Axis Motion">
-          <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
-            {axisMotionBtns.map((b) => (
-              <Btn
-                key={b}
-                label={b.replaceAll("_", " ")}
-                onClick={() => RobotAPI.behavior(b)}
-              />
-            ))}
-          </div>
-        </Panel>
-      </div>
-
-      {/* Behavior control */}
-      <div className="mt-6">
-        <Panel title="Behavior Control">
-          <div className="grid grid-cols-2 sm:grid-cols-10 gap-3">
-            {[...behavior1, ...behavior2].map((b, i) => (
-              <Btn
-                key={`${b}-${i}`}
-                label={b.replaceAll("_", " ")}
-                onClick={() => RobotAPI.behavior(b)}
-              />
-            ))}
-          </div>
-        </Panel>
-      </div>
     </section>
   );
 }
@@ -464,11 +525,10 @@ function Chip({
     <button
       onClick={onClick}
       className={`px-4 py-1 rounded-xl text-sm border transition cursor-pointer
-      ${
-        active
+      ${active
           ? "bg-indigo-500/30 border-indigo-400/40"
           : "bg-white/5 border-white/10 hover:bg-white/10"
-      }`}
+        }`}
     >
       {label}
     </button>

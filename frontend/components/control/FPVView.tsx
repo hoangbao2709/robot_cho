@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useRef, useState, useMemo } from "react";
 import { useSearchParams } from "next/navigation";
 
 const API_BASE =
@@ -127,7 +127,16 @@ export default function FPVView({
   const searchParams = useSearchParams();
   const ipParam = searchParams.get("ip");
   const DOG_SERVER = ipParam || DEFAULT_DOG_SERVER;
-
+    const lidarUrl = useMemo(() => {
+      try {
+        const url = new URL(DOG_SERVER);
+        url.port = "8080";          // đổi port
+        return url.toString();      // ví dụ: http://192.168.1.167:8080/
+      } catch {
+        // fallback nếu DOG_SERVER không phải URL hợp lệ
+        return "http://127.0.0.1:8080";
+      }
+    }, [DOG_SERVER]);
   /* ===== BODY ADJUST (debounce) ===== */
 
   const bodyTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -422,10 +431,11 @@ useEffect(() => {
 
   return (
     <div className="space-y-6">
+
       {/* FPV video */}
       <div className="relative overflow-hidden rounded-2xl border border-white/10 bg-black shadow-[0_10px_30px_rgba(0,0,0,0.35)]">
         <div className="absolute left-3 top-2 text-green-300 text-xl font-bold drop-shadow">
-          FPS:{fps}
+          FPS: {fps}
         </div>
         <img
           src={streamUrl || "/placeholder.svg?height=360&width=640"}

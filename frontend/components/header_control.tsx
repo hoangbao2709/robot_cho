@@ -58,7 +58,7 @@ export default function HeaderControl({ mode, onToggle }: HeaderControlProps) {
       </header>
 
       {/* Hàng dưới: Robot info + metrics + lidar map */}
-      <div className="mt-4 grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <div className="mt-4 grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Robot A + metrics */}
         <div className="col-span-2 p-4 rounded-2xl bg-white/5 border border-white/10">
           <div className="flex flex-wrap items-center gap-6">
@@ -73,12 +73,6 @@ export default function HeaderControl({ mode, onToggle }: HeaderControlProps) {
             <Metric label="Water Level" value="50%" />
             <Metric label="Battery" value="85%" />
           </div>
-        </div>
-
-        {/* Lidar map */}
-        <div className="p-4 rounded-2xl bg-white/5 border border-white/10">
-          <div className="text-sm mb-2 opacity-80">Lidar map</div>
-          <div className="h-40 rounded-xl bg-gradient-to-b from-slate-900 to-slate-800 border border-white/10" />
         </div>
       </div>
     </>
