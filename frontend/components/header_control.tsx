@@ -1,11 +1,56 @@
 "use client";
 
+import React, { useEffect, useState } from "react";
+
 type HeaderControlProps = {
   mode: "remote" | "fpv";
   onToggle: () => void;
-  // Nếu sau này muốn xử lý nút Disconnect thì thêm:
-  // onDisconnect?: () => void;
 };
+
+type SystemTelemetry = {
+  cpu_percent: number | null;
+  ram: string | null;
+  disk: string | null;
+  ip: string | null;
+  time: string | null;
+};
+
+type Telemetry = {
+  robot_connected: boolean;
+  turn_speed_range?: [number, number];
+  step_default?: number;
+  z_range?: [number, number];
+  z_current?: number;
+  pitch_range?: [number, number];
+  pitch_current?: number;
+  battery?: number | null;
+  fw?: string | null;
+  fps?: number | null;
+  system?: SystemTelemetry | null;
+};
+
+// --- NEW: kiểu dữ liệu pose từ Lidar ---
+type LidarPose = {
+  x: number;
+  y: number;
+  theta?: number;
+};
+
+const API_BASE =
+  process.env.NEXT_PUBLIC_API_BASE || "http://127.0.0.1:8000/control";
+const robotId = "robot-a";
+
+async function api<T = any>(path: string, init?: RequestInit): Promise<T> {
+  const res = await fetch(`${API_BASE}${path}`, {
+    ...init,
+    headers: { "Content-Type": "application/json", ...(init?.headers || {}) },
+    cache: "no-store",
+  });
+  if (!res.ok) {
+    throw new Error(`Request failed: ${res.status}`);
+  }
+  return res.json();
+}
 
 function Metric({ label, value }: { label: string; value: string }) {
   return (
@@ -19,11 +64,108 @@ function Metric({ label, value }: { label: string; value: string }) {
 export default function HeaderControl({ mode, onToggle }: HeaderControlProps) {
   const isFPV = mode === "fpv";
 
+  const [robotName, setRobotName] = useState<string>("Robot A");
+  const [telemetry, setTelemetry] = useState<Telemetry | null>(null);
+  const [loading, setLoading] = useState<boolean>(true);
+  const [error, setError] = useState<string | null>(null);
+
+  // --- NEW: text hiện LOCATION ---
+  const [locationText, setLocationText] = useState<string>("-");
+
+  // ====== Poll /status/ ======
+  useEffect(() => {
+    let isMounted = true;
+
+    async function fetchStatus() {
+      try {
+        const data = await api<any>(`/api/robots/${robotId}/status/`);
+        if (!isMounted) return;
+
+        setRobotName(data.name || "Robot A");
+
+        const t: Telemetry =
+          data.telemetry ?? {
+            robot_connected: data.robot_connected ?? false,
+            turn_speed_range: data.turn_speed_range,
+            step_default: data.step_default,
+            z_range: data.z_range,
+            z_current: data.z_current,
+            pitch_range: data.pitch_range,
+            pitch_current: data.pitch_current,
+            battery: data.battery,
+            fw: data.fw,
+            fps: data.fps,
+            system: data.system ?? null,
+          };
+
+        setTelemetry(t);
+        setError(null);
+        setLoading(false);
+      } catch (e: any) {
+        console.error("Fetch status error", e);
+        if (!isMounted) return;
+        setError("Cannot fetch robot status");
+        setLoading(false);
+      }
+    }
+
+    fetchStatus();
+    const id = setInterval(fetchStatus, 2000);
+    return () => {
+      isMounted = false;
+      clearInterval(id);
+    };
+  }, []);
+
+  // ====== NEW: Poll /lidar_pose/ để lấy (x, y) ======
+  useEffect(() => {
+    let stop = false;
+
+    async function fetchPose() {
+      try {
+        const raw = await api<any>(`/api/robots/${robotId}/lidar_pose/`);
+        if (stop) return;
+
+        const p: LidarPose = raw.pose ?? raw;
+
+        if (typeof p?.x === "number" && typeof p?.y === "number") {
+          const x = p.x.toFixed(2);
+          const y = p.y.toFixed(2);
+          setLocationText(`x: ${x} m, y: ${y} m`);
+        } else {
+          setLocationText("-");
+        }
+      } catch (e) {
+        // nếu Lidar/SLAM chưa chạy thì im lặng, chỉ hiện "-"
+        if (!stop) {
+          setLocationText("-");
+        }
+      }
+    }
+
+    fetchPose();
+    const id = setInterval(fetchPose, 1000); // 1s cập nhật 1 lần
+
+    return () => {
+      stop = true;
+      clearInterval(id);
+    };
+  }, []);
+
+  const sys: SystemTelemetry | null = telemetry?.system ?? null;
+
+  const cpuText =
+    sys?.cpu_percent != null ? `${sys.cpu_percent}%` : loading ? "…" : "-";
+  const ramText = sys?.ram ?? (loading ? "…" : "-");
+  const diskText = sys?.disk ?? (loading ? "…" : "-");
+  const ipText = sys?.ip ?? (loading ? "…" : "-");
+  const batteryValue =
+    telemetry?.battery != null ? `${telemetry.battery}%` : loading ? "…" : "-";
+
   return (
     <>
-      {/* Header trên cùng: tiêu đề + toggle Remote / FPV + nút Disconnect */}
+      {/* Header trên cùng */}
       <header className="flex items-center justify-between">
-        {/* Tiêu đề gradient dùng class global */}
         <h1
           className={`gradient-title select-none transition-all duration-300 ${
             isFPV ? "opacity-100" : "opacity-90"
@@ -32,14 +174,12 @@ export default function HeaderControl({ mode, onToggle }: HeaderControlProps) {
           {isFPV ? "FPV CONTROL MODE" : "REMOTE CONTROL MODE"}
         </h1>
 
-        {/* Nhóm nút bên phải */}
         <div className="flex items-center gap-3">
           <button className="px-3 py-1 rounded-xl bg-pink-500/20 hover:bg-pink-500/30 text-pink-300 text-sm">
             Disconnect
           </button>
 
           <span className="text-sm opacity-70">Remote</span>
-          {/* Toggle giống bản 1 nhưng dùng state mode từ props */}
           <button
             onClick={onToggle}
             className={`w-11 h-7 rounded-full border border-violet-400/50 p-1 grid items-center transition-all duration-300 ${
@@ -57,21 +197,24 @@ export default function HeaderControl({ mode, onToggle }: HeaderControlProps) {
         </div>
       </header>
 
-      {/* Hàng dưới: Robot info + metrics + lidar map */}
+      {/* Hàng dưới: Robot info + metrics */}
       <div className="mt-4 grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Robot A + metrics */}
         <div className="col-span-2 p-4 rounded-2xl bg-white/5 border border-white/10">
           <div className="flex flex-wrap items-center gap-6">
-            <div className="text-lg font-semibold">🤖 Robot A</div>
-            <div className="text-xs uppercase opacity-60">Robot Details</div>
+            <div className="text-lg font-semibold">🤖 {robotName}</div>
+            {sys?.time && (
+              <div className="text-xs opacity-60">Time: {sys.time}</div>
+            )}
+            {error && <div className="text-xs text-red-400">{error}</div>}
           </div>
+
           <div className="mt-4 grid grid-cols-3 gap-4 text-sm">
-            <Metric label="Location" value="25.23234, 19.76543" />
-            <Metric label="Cleaning Progress" value="80% (stopped)" />
-            <Metric label="Floor" value="1st" />
-            <Metric label="Status" value="Resting" />
-            <Metric label="Water Level" value="50%" />
-            <Metric label="Battery" value="85%" />
+            <Metric label="Location" value={locationText} />
+            <Metric label="CPU" value={cpuText} />
+            <Metric label="RAM" value={ramText} />
+            <Metric label="SDC" value={diskText} />
+            <Metric label="IPA" value={ipText} />
+            <Metric label="Battery" value={batteryValue} />
           </div>
         </div>
       </div>

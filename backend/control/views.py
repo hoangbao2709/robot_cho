@@ -23,24 +23,58 @@ class ConnectView(APIView):
         robot.save(update_fields=["addr"])
         return Response({"ok": True, **result}, status=200)
 
-# ===== Status =====
 class RobotStatusView(APIView):
     def get(self, request, robot_id):
         robot = get_object_or_404(Robot, pk=robot_id)
         client = ROSClient(robot_id)
-        s = client.get_status()
 
-        robot.location_lat = s["location"]["lat"]
-        robot.location_lon = s["location"]["lon"]
-        robot.cleaning_progress = s["cleaning_progress"]
-        robot.floor = s["floor"]
-        robot.status_text = s["status"]
-        robot.water_level = s["water_level"]
-        robot.battery = s["battery"]
-        robot.fps = s["fps"]
-        robot.save()
+        # Lấy JSON từ Flask /status qua ROSClient
+        try:
+            s = client.get_status() or {}
+        except Exception as e:
+            print("[RobotStatusView] get_status error:", e)
+            s = {}
 
-        return Response(RobotSerializer(robot).data, status=200)
+        changed_fields = []
+
+        # Cập nhật battery / fps vào DB nếu có
+        battery = s.get("battery")
+        if battery is not None and hasattr(robot, "battery"):
+            robot.battery = battery
+            changed_fields.append("battery")
+
+        fps = s.get("fps")
+        if fps is not None and hasattr(robot, "fps"):
+            robot.fps = fps
+            changed_fields.append("fps")
+
+        robot_connected = s.get("robot_connected")
+        if robot_connected is not None and hasattr(robot, "status_text"):
+            robot.status_text = "online" if robot_connected else "offline"
+            changed_fields.append("status_text")
+
+        if changed_fields:
+            robot.save(update_fields=changed_fields)
+
+        # dữ liệu cơ bản của Robot (id, name, battery, fps, ...)
+        data = RobotSerializer(robot).data
+
+        # Gắn thêm block telemetry cho frontend
+        data["telemetry"] = {
+            "robot_connected": s.get("robot_connected", False),
+            "turn_speed_range": s.get("turn_speed_range"),
+            "step_default": s.get("step_default"),
+            "z_range": s.get("z_range"),
+            "z_current": s.get("z_current"),
+            "pitch_range": s.get("pitch_range"),
+            "pitch_current": s.get("pitch_current"),
+            "battery": s.get("battery"),
+            "fw": s.get("fw"),
+            "fps": s.get("fps"),
+            "system": s.get("system"),  # <-- QUAN TRỌNG
+        }
+
+        return Response(data, status=200)
 
 # ===== FPV =====
 class FPVView(APIView):
