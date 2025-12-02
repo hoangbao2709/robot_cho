@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { RobotAPI } from "@/app/lib/robotApi";
 
 type Props = {
@@ -8,99 +8,143 @@ type Props = {
   enabled: boolean;
 };
 
-const LIN_V = 0.35;
-const WS_ORIGIN =
-  process.env.NEXT_PUBLIC_BACKEND_WS || "ws://127.0.0.1:8000";
+const LIN_V = 0.35;      // tốc độ tịnh tiến tối đa
+const YAW_SENS = 0.003;  // độ nhạy xoay chuột
+const MAX_YAW = 1.0;     // giới hạn tốc độ quay
 
-export default function MouselookPad({ robotId, enabled }: Props) {
+export default function MouselookPad({ enabled }: Props) {
   const overlayRef = useRef<HTMLDivElement | null>(null);
-  const wsRef = useRef<WebSocket | null>(null);
-  const wsReadyRef = useRef(false);
+  const [locked, setLocked] = useState(false);
+  const pointerLockedRef = useRef(false);
 
-  const [ctrlHeld, setCtrlHeld] = useState(false);
+  // trạng thái phím W/S/A/D
+  const keysRef = useRef({
+    w: false,
+    s: false,
+    a: false,
+    d: false,
+  });
 
-  // fwd = W/S, turn = quay trái/phải bằng A/D
-  const velRef = useRef<{ fwd: number; turn: number }>({ fwd: 0, turn: 0 });
+  // ===== helper: vx, vy từ W/S/A/D =====
+  const getVelFromKeys = () => {
+    const k = keysRef.current;
 
-  // ===== WebSocket =====
+    let fwd = 0;
+    if (k.w) fwd += 1;
+    if (k.s) fwd -= 1;
+
+    let strafe = 0;
+    if (k.d) strafe += 1;
+    if (k.a) strafe -= 1;
+
+    if (fwd === 0 && strafe === 0) {
+      return { vx: 0, vy: 0, active: false };
+    }
+
+    const len = Math.sqrt(fwd * fwd + strafe * strafe) || 1;
+    fwd /= len;
+    strafe /= len;
+
+    return {
+      vx: fwd * LIN_V,
+      vy: strafe * LIN_V,
+      active: true,
+    };
+  };
+
+  const sendMove = (rz: number) => {
+    const { vx, vy, active } = getVelFromKeys();
+    if (!active && rz === 0) {
+      RobotAPI.move({
+        vx: 0,
+        vy: 0,
+        vz: 0,
+        rx: 0,
+        ry: 0,
+        rz: 0,
+      }).catch(() => {});
+      return;
+    }
+
+    RobotAPI.move({
+      vx,
+      vy,
+      vz: 0,
+      rx: 0,
+      ry: 0,
+      rz,
+    }).catch(() => {});
+  };
+
+  const stopMove = () => {
+    keysRef.current = { w: false, s: false, a: false, d: false };
+    RobotAPI.move({
+      vx: 0,
+      vy: 0,
+      vz: 0,
+      rx: 0,
+      ry: 0,
+      rz: 0,
+    }).catch(() => {});
+  };
+
+  // ===== Pointer lock: mousemove trên document =====
   useEffect(() => {
     if (!enabled) {
-      wsRef.current?.close();
-      wsRef.current = null;
-      wsReadyRef.current = false;
+      if (document.pointerLockElement === overlayRef.current) {
+        document.exitPointerLock();
+      }
+      pointerLockedRef.current = false;
+      setLocked(false);
       stopMove();
       return;
     }
 
-    const wsUrl = `${WS_ORIGIN}/ws/robots/${robotId}/control/`;
-    console.log("[MouseLook] connect WS =>", wsUrl);
+    const handleMouseMove = (e: MouseEvent) => {
+      if (!pointerLockedRef.current) return;
 
-    const ws = new WebSocket(wsUrl);
-    wsRef.current = ws;
-    wsReadyRef.current = false;
+      const movementX = e.movementX || 0;
+      if (!movementX) return;
 
-    ws.onopen = () => {
-      console.log("[MouseLook] WS OPEN");
-      wsReadyRef.current = true;
-      ws.send(JSON.stringify({ type: "ml_enable", enable: true }));
+      let rz = -movementX * YAW_SENS; // đảo dấu nếu ngược cảm giác
+      if (rz > MAX_YAW) rz = MAX_YAW;
+      if (rz < -MAX_YAW) rz = -MAX_YAW;
+
+      sendMove(rz);
     };
 
-    ws.onclose = (ev) => {
-      console.log("[MouseLook] WS CLOSE", ev.code, ev.reason);
-      wsReadyRef.current = false;
-      wsRef.current = null;
-      stopMove();
+    const handleLockChange = () => {
+      const el = overlayRef.current;
+      const isLocked = document.pointerLockElement === el;
+      pointerLockedRef.current = isLocked;
+      setLocked(isLocked);
+      if (!isLocked) {
+        stopMove();
+      }
     };
 
-    ws.onerror = (err) => {
-      console.error("[MouseLook] WS ERROR", err);
-      wsReadyRef.current = false;
-    };
+    document.addEventListener("mousemove", handleMouseMove);
+    document.addEventListener("pointerlockchange", handleLockChange);
 
     return () => {
-      ws.close();
+      document.removeEventListener("mousemove", handleMouseMove);
+      document.removeEventListener("pointerlockchange", handleLockChange);
+      if (document.pointerLockElement === overlayRef.current) {
+        document.exitPointerLock();
+      }
+      pointerLockedRef.current = false;
+      setLocked(false);
+      stopMove();
     };
-  }, [enabled, robotId]);
+  }, [enabled]);
 
-  // ===== Mouse move => gửi dx,dy cho server =====
-  const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (!enabled) return;
-    if (ctrlHeld) return; // đang giữ Ctrl để thao tác UI
-
-    const ws = wsRef.current;
-    if (!ws || !wsReadyRef.current || ws.readyState !== WebSocket.OPEN) return;
-
-    const { movementX, movementY } = e.nativeEvent;
-    if (movementX === 0 && movementY === 0) return;
-
-    // DEBUG: xem log trên console trước
-    // console.log("ml_move", movementX, movementY);
-
-    ws.send(
-      JSON.stringify({
-        type: "ml_move",
-        dx: movementX,
-        dy: movementY,
-      })
-    );
-  };
-
-  // ===== WASD + Ctrl =====
+  // ===== WASD =====
   useEffect(() => {
     if (!enabled) return;
-
-    const recalcMove = () => {
-      const { fwd, turn } = velRef.current;
-      const vx = fwd * LIN_V;
-      const rz = turn * 1.0;
-
-      RobotAPI.move({ vx, vy: 0, vz: 0, rx: 0, ry: 0, rz }).catch(() => {});
-    };
 
     const handleKeyDown = (e: KeyboardEvent) => {
       const key = e.key.toLowerCase();
 
-      // Đang gõ trong input/textarea thì bỏ qua
       const target = e.target as HTMLElement | null;
       if (
         target &&
@@ -111,36 +155,31 @@ export default function MouselookPad({ robotId, enabled }: Props) {
         return;
       }
 
-      if (key === "control") {
-        if (!ctrlHeld) setCtrlHeld(true);
-        return;
-      }
-
-      if (!enabled || ctrlHeld) return;
+      if (!pointerLockedRef.current) return;
 
       let changed = false;
       switch (key) {
         case "w":
-          if (velRef.current.fwd !== 1) {
-            velRef.current.fwd = 1;
+          if (!keysRef.current.w) {
+            keysRef.current.w = true;
             changed = true;
           }
           break;
         case "s":
-          if (velRef.current.fwd !== -1) {
-            velRef.current.fwd = -1;
+          if (!keysRef.current.s) {
+            keysRef.current.s = true;
             changed = true;
           }
           break;
         case "a":
-          if (velRef.current.turn !== 1) {
-            velRef.current.turn = 1;
+          if (!keysRef.current.a) {
+            keysRef.current.a = true;
             changed = true;
           }
           break;
         case "d":
-          if (velRef.current.turn !== -1) {
-            velRef.current.turn = -1;
+          if (!keysRef.current.d) {
+            keysRef.current.d = true;
             changed = true;
           }
           break;
@@ -150,33 +189,38 @@ export default function MouselookPad({ robotId, enabled }: Props) {
 
       if (changed) {
         e.preventDefault();
-        recalcMove();
+        sendMove(0); // chỉ update vx, vy
       }
     };
 
     const handleKeyUp = (e: KeyboardEvent) => {
       const key = e.key.toLowerCase();
 
-      if (key === "control") {
-        if (ctrlHeld) setCtrlHeld(false);
-        return;
-      }
-
-      if (!enabled || ctrlHeld) return;
+      if (!pointerLockedRef.current) return;
 
       let changed = false;
       switch (key) {
         case "w":
+          if (keysRef.current.w) {
+            keysRef.current.w = false;
+            changed = true;
+          }
+          break;
         case "s":
-          if (velRef.current.fwd !== 0) {
-            velRef.current.fwd = 0;
+          if (keysRef.current.s) {
+            keysRef.current.s = false;
             changed = true;
           }
           break;
         case "a":
+          if (keysRef.current.a) {
+            keysRef.current.a = false;
+            changed = true;
+          }
+          break;
         case "d":
-          if (velRef.current.turn !== 0) {
-            velRef.current.turn = 0;
+          if (keysRef.current.d) {
+            keysRef.current.d = false;
             changed = true;
           }
           break;
@@ -186,7 +230,7 @@ export default function MouselookPad({ robotId, enabled }: Props) {
 
       if (changed) {
         e.preventDefault();
-        recalcMove();
+        sendMove(0);
       }
     };
 
@@ -198,11 +242,19 @@ export default function MouselookPad({ robotId, enabled }: Props) {
       window.removeEventListener("keyup", handleKeyUp);
       stopMove();
     };
-  }, [enabled, ctrlHeld]);
+  }, [enabled]);
 
-  const stopMove = () => {
-    velRef.current = { fwd: 0, turn: 0 };
-    RobotAPI.move({ vx: 0, vy: 0, vz: 0, rx: 0, ry: 0, rz: 0 }).catch(() => {});
+  // ===== click để toggle lock trong khung FPV =====
+  const toggleLock = () => {
+    if (!enabled) return;
+    const el = overlayRef.current;
+    if (!el) return;
+
+    if (pointerLockedRef.current) {
+      document.exitPointerLock();
+    } else {
+      (el as any).requestPointerLock?.();
+    }
   };
 
   if (!enabled) return null;
@@ -210,12 +262,12 @@ export default function MouselookPad({ robotId, enabled }: Props) {
   return (
     <div
       ref={overlayRef}
-      onMouseMove={handleMouseMove}
-      className={`fixed inset-0 z-40 ${ctrlHeld ? "" : "cursor-none"}`}
+      onClick={toggleLock}
+      className={`absolute inset-0 ${
+        locked ? "cursor-none" : "cursor-crosshair"
+      }`}
       style={{
         background: "transparent",
-        // Giữ Ctrl => không chặn click UI
-        pointerEvents: ctrlHeld ? "none" : "auto",
       }}
     />
   );

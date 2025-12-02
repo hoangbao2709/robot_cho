@@ -337,7 +337,7 @@ export default function RemoteView({
           <HeaderControl mode={mode} onToggle={toggleMode} />
 
           <div className="relative overflow-hidden rounded-2xl border border-white/10 bg-black">
-            <div className="absolute left-3 top-2 text-green-300 text-xl font-bold drop-shadow">
+            <div className="absolute left-3 top-2 text-green-300 text-xl font-bold drop-shadow z-10">
               FPS:{fps}
             </div>
             <img
@@ -345,7 +345,11 @@ export default function RemoteView({
               alt="FPV"
               className="w-full aspect-video object-cover opacity-80"
             />
+
+            {/* Overlay mouselook chỉ trong khung FPV */}
+            <MouselookPad robotId={robotId} enabled={mouseLook} />
           </div>
+
 
           {/* Bottom control grids */}
           <div className="mt-8 grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -513,9 +517,6 @@ export default function RemoteView({
           </Panel>
         </div>
       </div>
-
-      {/* Overlay điều khiển bằng chuột + WASD */}
-      <MouselookPad robotId={robotId} enabled={mouseLook} />
     </section>
   );
 }
