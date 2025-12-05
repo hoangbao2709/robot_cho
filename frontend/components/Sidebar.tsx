@@ -1,14 +1,10 @@
 "use client";
+
+import { useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
-import { usePathname } from "next/navigation";
-import {
-  Link2,
-  Gamepad2,
-  Bot,
-  BarChart3,
-  LogOut,
-} from "lucide-react"; // icon đẹp, cài: npm i lucide-react
+import { usePathname, useRouter } from "next/navigation";
+import { Link2, Gamepad2, Bot, BarChart3, LogOut, ChevronLeft, ChevronRight } from "lucide-react";
 
 const menu = [
   { href: "/dashboard", label: "Connection", icon: Link2 },
@@ -19,25 +15,72 @@ const menu = [
 
 export default function Sidebar() {
   const path = usePathname();
+  const router = useRouter();
+  const [collapsed, setCollapsed] = useState(false);
+
+  function logout() {
+    localStorage.clear();
+    router.push("/login");
+  }
 
   return (
-    <aside className="w-64 h-screen bg-[#160626] border-r border-white/10 flex flex-col justify-between">
-      {/* --- Logo & Title --- */}
-      <div className="flex flex-col items-center pt-8 pb-6">
-        <Image
-          src="/logo_hongtrang.png"
-          alt="RobotControl Logo"
-          width={60}
-          height={60}
-          className="rounded-full mb-3"
-        />
-        <h1 className="text-pink-400 font-bold text-xl tracking-wide">
-          RobotControl
-        </h1>
+    <aside
+      className={`
+        h-screen bg-[#160626] border-r border-white/10 flex flex-col justify-between
+        transition-all duration-300
+        ${collapsed ? "w-20" : "w-64"}
+      `}
+    >
+      {/* --- Top: Logo + Toggle --- */}
+      <div className="flex flex-col items-center pt-6 pb-4 relative">
+        {/* Nút toggle */}
+        <button
+          onClick={() => setCollapsed((prev) => !prev)}
+          className="
+            absolute -right-4 top-10
+            w-10 h-10 
+            rounded-full
+            bg-[#1f0d33] 
+            border border-white/20
+            flex items-center justify-center
+            text-white/80 
+            hover:text-white
+            hover:bg-purple-600/80
+            hover:border-purple-300/70
+            transition-all duration-300
+            shadow-md hover:shadow-purple-500/40
+            hover:scale-110 active:scale-95
+            cursor-pointer
+          "
+          aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+        >
+          {collapsed ? (
+            <ChevronRight size={28} strokeWidth={2.8} />
+          ) : (
+            <ChevronLeft size={28} strokeWidth={4.8} />
+          )}
+        </button>
+
+
+        {/* Logo */}
+        <div className="flex flex-col items-center">
+          <Image
+            src="/logo_hongtrang.png"
+            alt="RobotControl Logo"
+            width={collapsed ? 40 : 60}
+            height={collapsed ? 40 : 60}
+            className="rounded-full mb-2 transition-all duration-300"
+          />
+          {!collapsed && (
+            <h1 className="text-pink-400 font-bold text-xl tracking-wide">
+              RobotControl
+            </h1>
+          )}
+        </div>
       </div>
 
       {/* --- Menu --- */}
-      <nav className="flex-1 w-full mt-4 space-y-1 px-5">
+      <nav className="flex-1 w-full mt-2 space-y-1 px-3">
         {menu.map((item) => {
           const Icon = item.icon;
           const active = path.startsWith(item.href);
@@ -45,24 +88,37 @@ export default function Sidebar() {
             <Link
               key={item.href}
               href={item.href}
-              className={`flex items-center gap-3 rounded-xl px-4 py-4 text-sm font-medium transition-all ${
-                active
+              className={`
+                flex items-center gap-3 rounded-xl px-3 py-3 text-sm font-medium transition-all
+                ${active
                   ? "bg-gradient-to-r from-pink-500 to-purple-600 text-white shadow-md"
                   : "text-white/70 hover:bg-white/5 hover:text-white"
-              }`}
+                }
+                ${collapsed ? "justify-center" : ""}
+              `}
             >
               <Icon size={18} />
-              {item.label}
+              {!collapsed && <span>{item.label}</span>}
             </Link>
           );
         })}
       </nav>
 
       {/* --- Logout --- */}
-      <div className="p-5 border-t border-white/10">
-        <button className="flex items-center gap-3 text-sm text-white/70 hover:text-white transition">
+      <div className="p-3 border-t border-white/10">
+        <button
+          onClick={logout}
+          className={`
+            flex items-center gap-3 text-sm
+            text-white/70 hover:text-white
+            hover:bg-red-500/20
+            px-3 py-2 rounded-xl w-full
+            transition-all
+            ${collapsed ? "justify-center" : ""}
+          `}
+        >
           <LogOut size={18} />
-          Log Out
+          {!collapsed && <span>Log Out</span>}
         </button>
       </div>
     </aside>
