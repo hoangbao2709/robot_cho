@@ -1,12 +1,15 @@
 "use client";
 import React, { useCallback, useEffect, useState } from "react";
-import HeaderControl from "@/components/header_control";
+
 import RemoteView from "@/components/control/RemoteView";
 import FPVView from "@/components/control/FPVView";
+import HeaderControl from "@/components/header_control";
 
 // demo; thay bằng API thật của bạn
 async function robotStop() {
-  try { await fetch("/api/robots/robot-a/command/move/stop", { method: "POST" }); } catch {}
+  try {
+    await fetch("/api/robots/robot-a/command/move/stop", { method: "POST" });
+  } catch {}
 }
 async function getFpv() {
   return { stream_url: "/placeholder.svg?height=360&width=640", fps: 30 };
@@ -30,13 +33,18 @@ export default function ManualControlPage() {
 
   return (
     <section className="min-h-screen w-full bg-[#0c0520] text-white p-6">
-      <HeaderControl mode={mode} onToggle={toggleMode} />
-
       <div className="mt-6">
         {mode === "remote" ? (
-          <RemoteView onEmergencyStop={robotStop} />
+          <RemoteView
+            onEmergencyStop={robotStop}
+            mode={mode}
+            toggleMode={toggleMode}
+          />
         ) : (
-          <FPVView fps={fpv.fps ?? 30} />
+          <div className="space-y-4">
+            <HeaderControl mode={mode} onToggle={toggleMode} />
+            <FPVView fps={fpv.fps ?? 30} />
+          </div>
         )}
       </div>
     </section>

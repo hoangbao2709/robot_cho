@@ -1,14 +1,22 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback } from "react";
+import {
+  useState,
+  useEffect,
+  useRef,
+  useCallback,
+  useMemo,
+} from "react";
 import { useSearchParams } from "next/navigation";
 import { HalfCircleJoystick } from "@/components/HalfCircleJoystick";
-import header_control from "@/components/header_control";
+import HeaderControl from "@/components/header_control";
+import MouselookPad from "@/components/MouselookPad";
 
 const API_BASE =
   process.env.NEXT_PUBLIC_API_BASE || "http://127.0.0.1:8000/control";
 const DEFAULT_DOG_SERVER =
   process.env.NEXT_PUBLIC_DOGZILLA_BASE || "http://127.0.0.1:9000";
+
 const robotId = "robot-a";
 
 async function api<T = any>(path: string, init?: RequestInit): Promise<T> {
@@ -76,7 +84,6 @@ const RobotAPI = {
       method: "POST",
       body: JSON.stringify(sl),
     }),
-  // ====== NEW: ổn định / cân bằng ======
   stabilizingMode: (action: "on" | "off" | "toggle") =>
     api(`/api/robots/${robotId}/command/stabilizing_mode/`, {
       method: "POST",
@@ -86,13 +93,29 @@ const RobotAPI = {
 
 export default function RemoteView({
   onEmergencyStop,
+  mode,
+  toggleMode,
 }: {
   onEmergencyStop?: () => void;
+  mode: "remote" | "fpv";
+  toggleMode: () => void;
 }) {
   const searchParams = useSearchParams();
   const ipParam = searchParams.get("ip"); // /control?ip=...
   const DOG_SERVER = ipParam || DEFAULT_DOG_SERVER;
 
+  // Lidar viewer URL: cùng IP với DOG_SERVER nhưng port 8080
+  const lidarUrl = useMemo(() => {
+    try {
+      const url = new URL(DOG_SERVER);
+      url.port = "8080";
+      return url.toString(); // ví dụ: http://192.168.1.167:8080/
+    } catch {
+      return "http://127.0.0.1:8080";
+    }
+  }, [DOG_SERVER]);
+
+  const [lidarFrameLoaded, setLidarFrameLoaded] = useState(false);
   const [speed, setSpeed] = useState<"slow" | "normal" | "high">("normal");
   const [fps, setFps] = useState(30);
   const [streamUrl, setStreamUrl] = useState<string | null>(null);
@@ -105,12 +128,12 @@ export default function RemoteView({
     rz: 0,
   });
   const [isRunning, setIsRunning] = useState(false);
-
   const [connected, setConnected] = useState(false);
   const [connectError, setConnectError] = useState<string | null>(null);
-
-  // NEW: trạng thái cân bằng
   const [stabilizing, setStabilizing] = useState(false);
+
+  // NEW: trạng thái bật/tắt điều khiển bằng chuột + WASD
+  const [mouseLook, setMouseLook] = useState(false);
 
   const postureBtns = ["Lie_Down", "Stand_Up", "Sit_Down", "Squat", "Crawl"];
   const axisMotionBtns = [
@@ -123,13 +146,18 @@ export default function RemoteView({
   const behavior1 = ["Wave_Hand", "Handshake", "Pray", "Stretch", "Swing"];
   const behavior2 = ["Wave_Body", "Handshake", "Pee", "Play_Ball", "Mark_Time"];
 
+  useEffect(() => {
+    if (!isRunning) {
+      setLidarFrameLoaded(false);
+    }
+  }, [isRunning]);
+
   // ====== Kết nối Django -> Dogzilla Flask server + lấy stream_url ======
   useEffect(() => {
     let stop = false;
 
     (async () => {
       try {
-        // 1) Gọi connect để set robot.addr trong Django
         const res = await RobotAPI.connect(DOG_SERVER);
         if (stop) return;
 
@@ -137,7 +165,6 @@ export default function RemoteView({
           setConnected(true);
           setConnectError(null);
 
-          // 2) Sau khi connect ok, gọi fpv để lấy stream_url
           try {
             const f = await RobotAPI.fpv();
             if (!stop) setStreamUrl(f?.stream_url || null);
@@ -161,7 +188,6 @@ export default function RemoteView({
       }
     })();
 
-    // Poll status định kỳ (nếu sau này cần đọc fps/battery thì dùng)
     const iv = setInterval(async () => {
       try {
         // const s = await RobotAPI.status();
@@ -190,9 +216,9 @@ export default function RemoteView({
   /* ====== LIDAR TOGGLE ====== */
   const handleToggleLidar = useCallback(async () => {
     const next = !isRunning;
-    setIsRunning(next);
     try {
       await RobotAPI.lidar(next ? "start" : "stop");
+      setIsRunning(next);
     } catch (e) {
       console.error("Lidar error:", e);
     }
@@ -203,15 +229,27 @@ export default function RemoteView({
     const next = !stabilizing;
     setStabilizing(next);
     try {
-      // nếu muốn dùng "toggle" thì đổi lại action: "toggle"
       await RobotAPI.stabilizingMode(next ? "on" : "off");
     } catch (e) {
       console.error("Stabilizing error:", e);
-      // nếu lỗi thì rollback UI state
       setStabilizing((prev) => !prev);
     }
   }, [stabilizing]);
 
+  useEffect(() => {
+    if (!isRunning) {
+      setLidarFrameLoaded(false);
+      return;
+    }
+
+    const t = setTimeout(() => {
+      setLidarFrameLoaded(true);
+    }, 1500);
+
+    return () => clearTimeout(t);
+  }, [isRunning]);
+
+  // ===== JOYSTICK MOVE (giữ nguyên như cũ) =====
   const joyRef = useRef({ vx: 0, rz: 0, active: false });
   const maxV = 0.4;
   const maxW = 1.2;
@@ -222,7 +260,7 @@ export default function RemoteView({
     try {
       await RobotAPI.move({ vx, vy: 0, vz: 0, rx: 0, ry: 0, rz });
     } catch {
-      // im lặng, tránh spam console quá nhiều
+      /* ignore */
     }
   }, []);
 
@@ -276,13 +314,15 @@ export default function RemoteView({
   };
 
   return (
-    <section className="min-h-screen w-full bg-[#0c0520] text-white p-6">
-      {/* Hiển thị trạng thái connect */}
+    <section className="min-h-screen w-full bg-[#0c0520] text-white">
+      {/* Trạng thái connect */}
       <div className="mt-2 text-sm">
         <span className={connected ? "text-emerald-400" : "text-rose-400"}>
           {connected ? "Connected" : "Not connected"}
         </span>
-        <span className="ml-2 text-xs opacity-70">Dogzilla: {DOG_SERVER}</span>
+        <span className="ml-2 text-xs opacity-70">
+          Dogzilla: {DOG_SERVER}
+        </span>
         {connectError && (
           <div className="text-xs text-rose-400 mt-1">
             Error: {connectError}
@@ -292,10 +332,12 @@ export default function RemoteView({
 
       {/* Main content row */}
       <div className="mt-6 grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* FPV video */}
+        {/* FPV video + behaviors */}
         <div className="lg:col-span-2">
+          <HeaderControl mode={mode} onToggle={toggleMode} />
+
           <div className="relative overflow-hidden rounded-2xl border border-white/10 bg-black">
-            <div className="absolute left-3 top-2 text-green-300 text-xl font-bold drop-shadow">
+            <div className="absolute left-3 top-2 text-green-300 text-xl font-bold drop-shadow z-10">
               FPS:{fps}
             </div>
             <img
@@ -303,11 +345,81 @@ export default function RemoteView({
               alt="FPV"
               className="w-full aspect-video object-cover opacity-80"
             />
+
+            {/* Overlay mouselook chỉ trong khung FPV */}
+            <MouselookPad robotId={robotId} enabled={mouseLook} />
+          </div>
+
+
+          {/* Bottom control grids */}
+          <div className="mt-8 grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <Panel title="Basic Postures">
+              <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+                {postureBtns.map((b) => (
+                  <Btn
+                    key={b}
+                    label={b.replaceAll("_", " ")}
+                    onClick={() => RobotAPI.posture(b)}
+                  />
+                ))}
+              </div>
+            </Panel>
+
+            <Panel title="Axis Motion">
+              <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+                {axisMotionBtns.map((b) => (
+                  <Btn
+                    key={b}
+                    label={b.replaceAll("_", " ")}
+                    onClick={() => RobotAPI.behavior(b)}
+                  />
+                ))}
+              </div>
+            </Panel>
+          </div>
+
+          <div className="mt-6">
+            <Panel title="Behavior Control">
+              <div className="grid grid-cols-2 sm:grid-cols-10 gap-3">
+                {[...behavior1, ...behavior2].map((b, i) => (
+                  <Btn
+                    key={`${b}-${i}`}
+                    label={b.replaceAll("_", " ")}
+                    onClick={() => RobotAPI.behavior(b)}
+                  />
+                ))}
+              </div>
+            </Panel>
           </div>
         </div>
 
         {/* Right control panel */}
         <div className="space-y-6">
+          {/* Lidar map */}
+          <div
+            className={`rounded-2xl bg-white/5 border border-white/10 ${
+              !isRunning ? "hidden" : ""
+            }`}
+          >
+            <div className="text-sm mb-2 opacity-80">Lidar map</div>
+
+            <div className="relative w-full max-w-xl rounded-xl overflow-hidden border border-white/10 bg-black">
+              {!lidarFrameLoaded && (
+                <div className="absolute inset-0 flex items-center justify-center bg-black/80 z-10">
+                  <span className="text-sm text-white/70 animate-pulse">
+                    Waiting for Lidar data...
+                  </span>
+                </div>
+              )}
+
+              <iframe
+                src={lidarUrl}
+                className="block w-full h-[280px] border-0"
+                onLoad={() => setLidarFrameLoaded(true)}
+              />
+            </div>
+          </div>
+
           {/* Speed */}
           <Panel title="Speed">
             <div className="flex gap-3">
@@ -322,6 +434,7 @@ export default function RemoteView({
             </div>
           </Panel>
 
+          {/* Move */}
           <Panel title="Move">
             <div className="grid grid-cols-1 sm:grid-cols-[auto_1fr] gap-4 items-start">
               {/* Joystick */}
@@ -335,21 +448,36 @@ export default function RemoteView({
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-2">
-                <Btn label="Turn left" onClick={turnLeft} />
-                <Btn label="Turn right" onClick={turnRight} />
-                <Btn variant="danger" label="Stop" onClick={stopMove} />
-                <Btn
-                  variant={isRunning ? "danger" : "success"}
-                  label={isRunning ? "Stop Lidar" : "Start Lidar"}
-                  onClick={handleToggleLidar}
-                />
-                {/* NEW: nút bật/tắt cân bằng */}
-                <Btn
-                  variant={stabilizing ? "success" : "default"}
-                  label={stabilizing ? "Stabilizing ON" : "Stabilizing OFF"}
-                  onClick={handleToggleStabilizing}
-                />
+              <div className="flex flex-col gap-3">
+                <div className="grid grid-cols-2 gap-2">
+                  <Btn label="Turn left" onClick={turnLeft} />
+                  <Btn label="Turn right" onClick={turnRight} />
+                  <Btn variant="danger" label="Stop" onClick={stopMove} />
+                  <Btn
+                    variant={isRunning ? "success" : "danger"}
+                    label={isRunning ? "Stop Lidar" : "Start Lidar"}
+                    onClick={handleToggleLidar}
+                  />
+                  <Btn
+                    variant={stabilizing ? "success" : "default"}
+                    label={stabilizing ? "Stabilizing ON" : "Stabilizing OFF"}
+                    onClick={handleToggleStabilizing}
+                  />
+                </div>
+
+                {/* Toggle mouse look */}
+                <div className="flex justify-between pt-2 items-center">
+                  <div className="text-xs opacity-70">
+                    Bật chế độ{" "}
+                    <span className="font-semibold">Mouse Look</span> rồi dùng{" "}
+                    <span className="font-mono">WASD</span> + chuột để điều
+                    khiển như game 3D.
+                  </div>
+                  <MouseLookToggle
+                    on={mouseLook}
+                    onToggle={() => setMouseLook((prev) => !prev)}
+                  />
+                </div>
               </div>
             </div>
           </Panel>
@@ -389,52 +517,11 @@ export default function RemoteView({
           </Panel>
         </div>
       </div>
-
-      {/* Bottom control grids */}
-      <div className="mt-8 grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Basic Postures */}
-        <Panel title="Basic Postures">
-          <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
-            {postureBtns.map((b) => (
-              <Btn
-                key={b}
-                label={b.replaceAll("_", " ")}
-                onClick={() => RobotAPI.posture(b)}
-              />
-            ))}
-          </div>
-        </Panel>
-
-        <Panel title="Axis Motion">
-          <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
-            {axisMotionBtns.map((b) => (
-              <Btn
-                key={b}
-                label={b.replaceAll("_", " ")}
-                onClick={() => RobotAPI.behavior(b)}
-              />
-            ))}
-          </div>
-        </Panel>
-      </div>
-
-      {/* Behavior control */}
-      <div className="mt-6">
-        <Panel title="Behavior Control">
-          <div className="grid grid-cols-2 sm:grid-cols-10 gap-3">
-            {[...behavior1, ...behavior2].map((b, i) => (
-              <Btn
-                key={`${b}-${i}`}
-                label={b.replaceAll("_", " ")}
-                onClick={() => RobotAPI.behavior(b)}
-              />
-            ))}
-          </div>
-        </Panel>
-      </div>
     </section>
   );
 }
+
+/* ========== UI HELPERS ========== */
 
 function Panel({
   title,
@@ -488,7 +575,6 @@ function Btn({
     "px-4 py-2 text-sm rounded-xl border font-medium transition-all duration-200 cursor-pointer transform";
 
   let styles = "";
-
   if (variant === "danger") {
     styles =
       "bg-rose-600/70 border-rose-400 text-white " +
@@ -500,7 +586,6 @@ function Btn({
       "hover:bg-emerald-400 hover:border-emerald-200 hover:text-white " +
       "hover:shadow-lg hover:shadow-emerald-500/40 hover:scale-105 active:scale-95";
   } else {
-    // default
     styles =
       "bg-white/10 border-white/30 text-white " +
       "hover:bg-white hover:text-[#0c0520] hover:border-white " +
@@ -535,5 +620,29 @@ function SliderRow({
         className="w-full accent-fuchsia-400 cursor-pointer"
       />
     </div>
+  );
+}
+
+function MouseLookToggle({
+  on,
+  onToggle,
+}: {
+  on: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <button
+      onClick={onToggle}
+      className={`w-11 h-7 rounded-full border border-violet-400/50 p-1 grid items-center transition ${
+        on ? "bg-violet-500/40" : "bg-transparent"
+      }`}
+      aria-label="Toggle Mouse Look"
+    >
+      <div
+        className={`w-5 h-5 rounded-full border border-violet-300/60 bg-white/10 transition-transform ${
+          on ? "translate-x-4" : ""
+        }`}
+      />
+    </button>
   );
 }

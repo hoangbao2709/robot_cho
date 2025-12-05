@@ -106,57 +106,46 @@ class ROSClient:
     # ------------------------------------------------------------------
     def get_status(self) -> Dict[str, Any]:
         """
-        Đọc /status từ Flask server Dogzilla và map sang format
-        mà RobotStatusView đang mong đợi:
+        Đọc /status từ Flask server Dogzilla và TRẢ NGUYÊN JSON của nó.
+
+        Flask /status hiện tại trả kiểu:
 
         {
-          "location": {"lat": ..., "lon": ...},
-          "cleaning_progress": ...,
-          "floor": ...,
-          "status": ...,
-          "water_level": ...,
-          "battery": ...,
-          "fps": ...
+          "robot_connected": true,
+          "turn_speed_range": [-70, 70],
+          "step_default": 8,
+          "z_range": [75, 110],
+          "z_current": 105,
+          "pitch_range": [-30.0, 30.0],
+          "pitch_current": 0.0,
+          "battery": 73,
+          "fw": "4.0.1-Y",
+          "fps": 30,
+          "system": {
+            "cpu_percent": 100,
+            "disk": "SDC:67% -> 53.0GB",
+            "ip": "x.x.x.x",
+            "ram": "RAM:69% -> 4.0GB",
+            "time": "13:57:02"
+          }
         }
-
-        Vì server Dogzilla không có location/cleaning_progress/floor/water_level,
-        ta dùng các giá trị đang lưu trong DB (Robot model) làm nguồn dữ liệu.
         """
         robot = self._get_robot()
 
         try:
-            s = self._get_json("/status")   # JSON từ Flask
+            s = self._get_json("/status") or {}
         except Exception as e:
             print(f"[ROSClient] get_status() error: {e}")
             s = {}
 
-        # Dogzilla server /status (theo test.py) có dạng:
-        # {
-        #   "robot_connected": ...,
-        #   "turn_speed_range": [...],
-        #   "step_default": ...,
-        #   "z_range": [...],
-        #   "z_current": ...,
-        #   "pitch_range": [...],
-        #   "pitch_current": ...,
-        #   "battery": ...,
-        #   "fw": ...
-        # }
-        battery = s.get("battery", robot.battery)
-        fps = s.get("fps", robot.fps)  # nếu server không trả fps thì giữ giá trị cũ
+        # fallback battery/fps từ DB nếu server không trả
+        if s.get("battery") is None and getattr(robot, "battery", None) is not None:
+            s["battery"] = robot.battery
 
-        return {
-            "location": {
-                "lat": robot.location_lat or 0.0,
-                "lon": robot.location_lon or 0.0,
-            },
-            "cleaning_progress": robot.cleaning_progress,
-            "floor": robot.floor,
-            "status": robot.status_text,
-            "water_level": robot.water_level,
-            "battery": battery,
-            "fps": fps,
-        }
+        if s.get("fps") is None and getattr(robot, "fps", None) is not None:
+            s["fps"] = robot.fps
+
+        return s
 
     # ------------------------------------------------------------------
     # 3) FPV (camera stream)
