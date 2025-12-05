@@ -55,7 +55,6 @@ export default function Topbar() {
 
       <div className="flex items-center gap-4 text-sm text-white/80">
 
-        {/* ====================== 1) Chưa đăng nhập -> hiện LOGIN ====================== */}
         {!username && (
           <button
             onClick={goLogin}
@@ -65,13 +64,12 @@ export default function Topbar() {
               border border-violet-400/40
               text-white transition-all duration-200
               hover:scale-105 active:scale-95
+              cursor-pointer
             "
           >
             Login
           </button>
         )}
-
-        {/* ====================== 2) Đã đăng nhập -> hiện User + Logout ====================== */}
         {username && (
           <>
             <span className="font-medium">{username}</span>
@@ -96,6 +94,7 @@ export default function Topbar() {
                 text-white transition-all duration-200
                 hover:scale-105 active:scale-95
                 shadow-sm hover:shadow-red-500/20
+                cursor-pointer
               "
             >
               Logout

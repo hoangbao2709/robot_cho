@@ -42,7 +42,7 @@ export default function ManualControlPage() {
           />
         ) : (
           <div className="space-y-4">
-            <HeaderControl mode={mode} onToggle={toggleMode} />
+            <HeaderControl mode={mode} onToggle={toggleMode} connected={true} />
             <FPVView fps={fpv.fps ?? 30} />
           </div>
         )}
