@@ -1,0 +1,33 @@
+version: "3.9"
+
+services:
+  backend:
+    build: ./backend
+    container_name: dogzilla-backend
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend:/app
+    env_file:
+      - ./backend/.env
+    restart: unless-stopped
+
+  frontend:
+    build: ./frontend
+    container_name: dogzilla-frontend
+    ports:
+      - "3000:3000"
+    environment:
+      - NEXTPUBLIC_API_BASE=http://localhost:8000
+    restart: unless-stopped
+
+  robot-server:
+    image: python:3.12
+    container_name: dogzilla-robot
+    working_dir: /robot
+    volumes:
+      - ./robot_server:/robot
+    command: python app.py
+    ports:
+      - "9000:9000"
+    restart: unless-stopped

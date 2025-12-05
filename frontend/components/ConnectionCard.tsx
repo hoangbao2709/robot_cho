@@ -2,13 +2,16 @@
 
 import { useEffect, useState } from "react";
 
-type Device = {
-  id: number | string;
+export type Device = {
+  id: number;
   name: string;
-  ip: string;
+  ip: string; 
+  battery: number;
   url?: string;
+  status: "online" | "offline" | "unknown";
   source?: "manual" | "cloudflare";
 };
+
 
 type CardStatus = {
   status: "online" | "offline" | "unknown";

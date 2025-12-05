@@ -7,8 +7,9 @@ import { useRouter } from "next/navigation";
 export type Device = {
   id: number;
   name: string;
-  ip: string; // có thể là IP hoặc full URL Cloudflare
+  ip: string; 
   battery: number;
+  url?: string;
   status: "online" | "offline" | "unknown";
   source?: "manual" | "cloudflare";
 };

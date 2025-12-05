@@ -1,6 +1,5 @@
 "use client";
 import React, { useCallback, useEffect, useState } from "react";
-
 import RemoteView from "@/components/control/RemoteView";
 import FPVView from "@/components/control/FPVView";
 import HeaderControl from "@/components/header_control";
