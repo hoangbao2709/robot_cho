@@ -1,11 +1,14 @@
 // lib/robotApi.ts
 const API_BASE =
-  process.env.NEXT_PUBLIC_API_BASE || "http://127.0.0.1:8000/control";
+  process.env.NEXT_PUBLIC_API_BASE || "";
 export const DEFAULT_DOG_SERVER =
-  process.env.NEXT_PUBLIC_DOGZILLA_BASE || "http://127.0.0.1:9000";
+  process.env.NEXT_PUBLIC_DOGZILLA_BASE || "";
 export const robotId = "robot-a";
 
-async function api<T = any>(path: string, init?: RequestInit): Promise<T> {
+async function api<T = any>(path: string, init?: RequestInit): Promise<T | null> {
+  if (!API_BASE) {
+    return null;
+  }
   const res = await fetch(`${API_BASE}${path}`, {
     ...init,
     headers: {
@@ -69,5 +72,10 @@ export const RobotAPI = {
     api(`/api/robots/${robotId}/command/body_adjust/`, {
       method: "POST",
       body: JSON.stringify(sl),
+    }),
+  stabilizingMode: (action: "on" | "off" | "toggle") =>
+    api(`/api/robots/${robotId}/command/stabilizing_mode/`, {
+      method: "POST",
+      body: JSON.stringify({ action }),
     }),
 };

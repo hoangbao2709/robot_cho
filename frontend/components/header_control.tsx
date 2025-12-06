@@ -1,10 +1,12 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-
+import Link from "next/link";
 type HeaderControlProps = {
   mode: "remote" | "fpv";
   onToggle: () => void;
+  lidarUrl?: string | null;
+  connected: boolean;
 };
 
 type SystemTelemetry = {
@@ -29,11 +31,12 @@ type Telemetry = {
   system?: SystemTelemetry | null;
 };
 
-// --- NEW: kiểu dữ liệu pose từ Lidar ---
+// Pose từ Lidar server
 type LidarPose = {
   x: number;
   y: number;
   theta?: number;
+  connected: string;
 };
 
 const API_BASE =
@@ -61,7 +64,36 @@ function Metric({ label, value }: { label: string; value: string }) {
   );
 }
 
-export default function HeaderControl({ mode, onToggle }: HeaderControlProps) {
+function buildLidarPoseUrl(lidarUrl: string) {
+  if(!lidarUrl){
+    return "";
+  }
+  if (lidarUrl.endsWith("/pose") || lidarUrl.endsWith("/pose/")) {
+    return lidarUrl;
+  }
+
+  try {
+    const u = new URL(lidarUrl);
+    if (u.pathname.endsWith("/pose") || u.pathname.endsWith("/pose/")) {
+      return u.toString();
+    }
+    if (!u.pathname.endsWith("/")) {
+      u.pathname += "/";
+    }
+    u.pathname += "pose";
+    return u.toString();
+  } catch {
+
+    return `${lidarUrl.replace(/\/$/, "")}/pose`;
+  }
+}
+
+export default function HeaderControl({
+  mode,
+  onToggle,
+  lidarUrl,
+  connected,
+}: HeaderControlProps) {
   const isFPV = mode === "fpv";
 
   const [robotName, setRobotName] = useState<string>("Robot A");
@@ -69,10 +101,10 @@ export default function HeaderControl({ mode, onToggle }: HeaderControlProps) {
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
 
-  // --- NEW: text hiện LOCATION ---
+  // Text hiển thị LOCATION
   const [locationText, setLocationText] = useState<string>("-");
 
-  // ====== Poll /status/ ======
+  // ====== Poll /status/ trên backend ======
   useEffect(() => {
     let isMounted = true;
 
@@ -117,26 +149,36 @@ export default function HeaderControl({ mode, onToggle }: HeaderControlProps) {
     };
   }, []);
 
-  // ====== NEW: Poll /lidar_pose/ để lấy (x, y) ======
+  // ====== Poll Lidar server (lidarUrl) để lấy (x, y, theta) ======
   useEffect(() => {
-    let stop = false;
+    if (!lidarUrl) {
+      setLocationText("-");
+      return;
+    }
 
+    const poseUrl = buildLidarPoseUrl(lidarUrl);
+    let stop = false;
+    
     async function fetchPose() {
       try {
-        const raw = await api<any>(`/api/robots/${robotId}/lidar_pose/`);
+        const res = await fetch(poseUrl, { cache: "no-store" });
+        if (!res.ok) throw new Error(`Pose HTTP ${res.status}`);
+        const raw = await res.json();
+
         if (stop) return;
 
-        const p: LidarPose = raw.pose ?? raw;
+        const p: LidarPose = raw; // server trả { x, y, theta }
 
         if (typeof p?.x === "number" && typeof p?.y === "number") {
           const x = p.x.toFixed(2);
           const y = p.y.toFixed(2);
-          setLocationText(`x: ${x} m, y: ${y} m`);
+          const thetaText =
+            typeof p.theta === "number" ? `, θ: ${p.theta.toFixed(2)} rad` : "";
+          setLocationText(`x: ${x} m, y: ${y} m${thetaText}`);
         } else {
           setLocationText("-");
         }
       } catch (e) {
-        // nếu Lidar/SLAM chưa chạy thì im lặng, chỉ hiện "-"
         if (!stop) {
           setLocationText("-");
         }
@@ -144,13 +186,13 @@ export default function HeaderControl({ mode, onToggle }: HeaderControlProps) {
     }
 
     fetchPose();
-    const id = setInterval(fetchPose, 1000); // 1s cập nhật 1 lần
+    const id = setInterval(fetchPose, 1000);
 
     return () => {
       stop = true;
       clearInterval(id);
     };
-  }, []);
+  }, [lidarUrl]);
 
   const sys: SystemTelemetry | null = telemetry?.system ?? null;
 
@@ -175,9 +217,20 @@ export default function HeaderControl({ mode, onToggle }: HeaderControlProps) {
         </h1>
 
         <div className="flex items-center gap-3">
-          <button className="px-3 py-1 rounded-xl bg-pink-500/20 hover:bg-pink-500/30 text-pink-300 text-sm">
+          <Link
+            href="/control"
+            className="
+              px-3 py-1 rounded-xl
+              bg-pink-500/20 
+              hover:bg-pink-500/30 
+              text-pink-300 text-sm
+              transition-all
+              hover:scale-[1.03]
+              active:scale-95
+            "
+          >
             Disconnect
-          </button>
+          </Link>
 
           <span className="text-sm opacity-70">Remote</span>
           <button
@@ -206,6 +259,9 @@ export default function HeaderControl({ mode, onToggle }: HeaderControlProps) {
               <div className="text-xs opacity-60">Time: {sys.time}</div>
             )}
             {error && <div className="text-xs text-red-400">{error}</div>}
+                    <span className={connected ? "text-emerald-400" : "text-rose-400"}>
+          {connected ? "Connected" : "Not connected"}
+        </span>
           </div>
 
           <div className="mt-4 grid grid-cols-3 gap-4 text-sm">

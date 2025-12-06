@@ -1,10 +1,16 @@
 "use client";
 import { useState } from "react";
+import { useRouter } from "next/navigation";
+
+// Để thống nhất với Dashboard: dùng chung BACKEND_BASE
+const BACKEND_BASE =
+  process.env.NEXT_PUBLIC_API_BASE || "http://127.0.0.1:8000";
 
 export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const router = useRouter();
 
   async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -13,31 +19,92 @@ export default function LoginPage() {
     const password = String(data.get("password") || "");
 
     setError(null);
+
     if (!email || !password) {
       setError("Please enter email and password.");
       return;
     }
+
     setLoading(true);
-    await new Promise((r) => setTimeout(r, 900));
-    setLoading(false);
-    alert(`Logged in as ${email}`);
+
+    try {
+      const res = await fetch(`${BACKEND_BASE}/api/auth/login/`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password }),
+      });
+
+      const json = await res.json().catch(() => ({} as any));
+      console.log("[login] status =", res.status);
+      console.log("[login] json =", json);
+
+      if (!res.ok || json.ok === false) {
+        setError(
+          json.error ||
+            json.detail ||
+            "Login failed"
+        );
+        return;
+      }
+
+      // ==== LẤY TOKEN TỪ RESPONSE ====
+      const accessToken: string | null =
+        json.access || json.token || json.access_token || null;
+      const refreshToken: string | null =
+        json.refresh || json.refresh_token || null;
+
+      if (!accessToken) {
+        setError("Cannot find access token in response.");
+        return;
+      }
+
+      // ✅ LƯU ĐÚNG KEY ĐỂ DASHBOARD ĐỌC
+      localStorage.setItem("access_token", accessToken);
+      if (refreshToken) {
+        localStorage.setItem("refresh_token", refreshToken);
+      }
+
+      // lưu thêm info nếu backend trả về
+      if (json.username) {
+        localStorage.setItem("username", json.username);
+      }
+      if (json.email) {
+        localStorage.setItem("user_email", json.email);
+      }
+      if (json.robot_url) {
+        localStorage.setItem("robot_url", json.robot_url);
+      }
+      if (json.robot_device_id) {
+        localStorage.setItem("robot_device_id", json.robot_device_id);
+      }
+
+      // 👉 Redirect sang dashboard (Connection Manager)
+      router.push("/dashboard");
+    } catch (err) {
+      console.error(err);
+      setError("Network error, please try again.");
+    } finally {
+      setLoading(false);
+    }
   }
 
   return (
     <main className="min-h-screen bg-[#0c0520] text-white grid place-items-center p-6">
       <div className="w-full max-w-md">
         <div className="relative rounded-3xl border border-white/10 bg-white/5 p-6 sm:p-8 shadow-[0_0_0_1px_rgba(255,255,255,0.02)]">
-          <div className="pointer-events-none absolute inset-0 rounded-3xl ring-1 ring-inset ring-fuchsia-500/20"></div>
+          <div className="pointer-events-none absolute inset-0 rounded-3xl ring-1 ring-inset ring-fuchsia-500/20" />
           <div className="mb-6 text-center">
             <div className="inline-flex items-center gap-2">
-              <span className="h-3 w-3 rounded-full bg-pink-400 shadow-[0_0_20px_2px_rgba(244,114,182,0.6)]"></span>
+              <span className="h-3 w-3 rounded-full bg-pink-400 shadow-[0_0_20px_2px_rgba(244,114,182,0.6)]" />
               <h1 className="text-2xl font-bold tracking-tight">
                 <span className="text-pink-400">ROBOT</span>{" "}
                 <span className="text-sky-300">CONTROL</span>{" "}
                 <span className="text-indigo-400">LOGIN</span>
               </h1>
             </div>
-            <p className="mt-2 text-sm text-white/70">Sign in to continue to the Remote Control Mode.</p>
+            <p className="mt-2 text-sm text-white/70">
+              Sign in to continue to the Remote Control Mode.
+            </p>
           </div>
 
           <form onSubmit={onSubmit} className="space-y-5">
@@ -51,7 +118,7 @@ export default function LoginPage() {
                 className="w-full rounded-xl bg-white/5 border border-white/10 px-4 py-3 outline-none placeholder:text-white/40 focus:border-fuchsia-400/50 focus:ring-2 focus:ring-fuchsia-400/30"
                 autoComplete="email"
               />
-              <div className="pointer-events-none absolute inset-0 rounded-xl ring-1 ring-inset ring-white/5"></div>
+              <div className="pointer-events-none absolute inset-0 rounded-xl ring-1 ring-inset ring-white/5" />
             </div>
 
             <FieldLabel htmlFor="password">Password</FieldLabel>
@@ -79,11 +146,15 @@ export default function LoginPage() {
                 <input type="checkbox" name="remember" className="accent-fuchsia-400" />
                 <span className="text-white/80">Remember me</span>
               </label>
-              <a href="#" className="text-sky-300 hover:text-sky-200">Forgot password?</a>
+              <a href="#" className="text-sky-300 hover:text-sky-200">
+                Forgot password?
+              </a>
             </div>
 
             {error && (
-              <p className="text-sm text-rose-300 bg-rose-500/10 border border-rose-400/30 rounded-lg px-3 py-2">{error}</p>
+              <p className="text-sm text-rose-300 bg-rose-500/10 border border-rose-400/30 rounded-lg px-3 py-2">
+                {error}
+              </p>
             )}
 
             <button
@@ -96,25 +167,46 @@ export default function LoginPage() {
 
             <div className="relative py-3 text-center">
               <div className="border-t border-white/10" />
-              <span className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 bg-white/5 px-3 text-xs text-white/60">or</span>
+              <span className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 bg-white/5 px-3 text-xs text-white/60">
+                or
+              </span>
             </div>
 
             <div className="grid grid-cols-2 gap-3">
-              <button type="button" className="rounded-xl bg-white/5 border border-white/10 px-4 py-2 hover:bg-white/10">Login with Google</button>
-              <button type="button" className="rounded-xl bg-white/5 border border-white/10 px-4 py-2 hover:bg-white/10">Login with GitHub</button>
+              <button
+                type="button"
+                className="rounded-xl bg-white/5 border border-white/10 px-4 py-2 hover:bg-white/10"
+              >
+                Login with Google
+              </button>
+              <button
+                type="button"
+                className="rounded-xl bg-white/5 border border-white/10 px-4 py-2 hover:bg-white/10"
+              >
+                Login with GitHub
+              </button>
             </div>
           </form>
         </div>
 
         <p className="mt-6 text-center text-xs text-white/50">
-          By continuing, you agree to our <a href="#" className="text-sky-300 hover:text-sky-200">Terms</a> and <a href="#" className="text-sky-300 hover:text-sky-200">Privacy</a>.
+          Don&apos;t have an account?{" "}
+          <a href="/register" className="text-sky-300 hover:text-sky-200">
+            Create one
+          </a>
         </p>
       </div>
     </main>
   );
 }
 
-function FieldLabel({ children, htmlFor }: { children: React.ReactNode; htmlFor: string }) {
+function FieldLabel({
+  children,
+  htmlFor,
+}: {
+  children: React.ReactNode;
+  htmlFor: string;
+}) {
   return (
     <label htmlFor={htmlFor} className="block text-sm font-medium text-white/80">
       {children}

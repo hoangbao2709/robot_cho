@@ -1,3 +1,4 @@
+"use client";
 import LoginPage from "./login/page";
 import Link from "next/link";
 
