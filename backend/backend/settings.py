@@ -11,11 +11,33 @@ https://docs.djangoproject.com/en/5.2/ref/settings/
 """
 
 from pathlib import Path
-
+import os
+from datetime import timedelta
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
-
-
+import logging
+LOGGING = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "handlers": {
+        "null": {
+            "level": "INFO",
+            "class": "logging.NullHandler",
+        },
+        "console": {
+            "class": "logging.StreamHandler",
+        },
+    },
+    "loggers": {
+        # logger in ra mấy dòng:
+        # 127.0.0.1:49925 - - [05/Dec/2025:15:29:28] "POST /..." 200 11
+        "django.server": {
+            "handlers": ["null"],   # hoặc [] nếu muốn tắt hẳn
+            "level": "INFO",
+            "propagate": False,
+        },
+    },
+}
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/5.2/howto/deployment/checklist/
 
@@ -25,8 +47,7 @@ SECRET_KEY = 'django-insecure-cvbsxx-n%x%^40af+8^9-h+mbry(76cia18(sykids23d9=0b%
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = []
-
+ALLOWED_HOSTS = ["127.0.0.1", "localhost", "<IP-PC-TRONG-LAN>"]
 
 # Application definition
 
@@ -41,6 +62,7 @@ INSTALLED_APPS = [
     'corsheaders',
     'channels',
     'control',
+    'authapp'
 ]
 
 MIDDLEWARE = [
@@ -120,7 +142,7 @@ USE_TZ = True
 # https://docs.djangoproject.com/en/5.2/howto/static-files/
 
 STATIC_URL = 'static/'
-
+STATIC_ROOT = BASE_DIR / "staticfiles"
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.2/ref/settings/#default-auto-field
 
@@ -132,3 +154,29 @@ ASGI_APPLICATION = 'backend.asgi.application'
 CHANNEL_LAYERS = {
     "default": {"BACKEND": "channels.layers.InMemoryChannelLayer"}  # dev; prod dùng Redis
 }
+
+DATABASES = {
+    "default": {
+        "ENGINE": "django.db.backends.sqlite3",
+        "NAME": BASE_DIR / "db.sqlite3",
+    }
+}
+REST_FRAMEWORK = {
+    "DEFAULT_AUTHENTICATION_CLASSES": (
+        "rest_framework_simplejwt.authentication.JWTAuthentication",
+    ),
+    "DEFAULT_PERMISSION_CLASSES": (
+        "rest_framework.permissions.AllowAny",
+    ),
+}
+SIMPLE_JWT = {
+    "ACCESS_TOKEN_LIFETIME": timedelta(minutes=60),
+    "REFRESH_TOKEN_LIFETIME": timedelta(days=1),
+    # QUAN TRỌNG: phải có Bearer vì FE đang gửi "Authorization: Bearer <token>"
+    "AUTH_HEADER_TYPES": ("Bearer",),
+}
+
+MONGO_URI = "mongodb+srv://hoangbao27092004_db_user:baozzz123@cluster0.q7fvyyw.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0"
+MONGO_DB_NAME = "robot_users"  
+MONGO_USERS_COLLECTION = "users"
+ROBOT_REG_SECRET = os.getenv("ROBOT_REG_SECRET", "dev-robot-secret")

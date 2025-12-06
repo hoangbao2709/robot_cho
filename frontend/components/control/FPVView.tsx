@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useRef, useState, useMemo } from "react";
+import React, { useEffect, useRef, useCallback, useState, useMemo } from "react";
 import { useSearchParams } from "next/navigation";
 
 const API_BASE =
@@ -111,7 +111,27 @@ export default function FPVView({
   const behavior2 = ["Wave_Body", "Handshake", "Pee", "Play_Ball", "Mark_Time"];
   const [stabilizingOn, setStabilizingOn] = useState(false);
   const [streamUrl, setStreamUrl] = useState<string | null>(null);
-  const [sliders, setSliders] = useState({
+  const [connected, setConnected] = useState(false);
+  const [connectError, setConnectError] = useState<string | null>(null);
+  const [lidarRunning, setLidarRunning] = useState(false);
+  const lastButtonsRef = useRef<boolean[]>([]);
+  const searchParams = useSearchParams();
+  const ipParam = searchParams.get("ip");
+  const hasResetBody = useRef(false);
+  const DOG_SERVER = ipParam || DEFAULT_DOG_SERVER;
+
+  /* ===== BODY ADJUST (debounce) ===== */
+
+  type BodyState = {
+    tx: number;
+    ty: number;
+    tz: number;
+    rx: number;
+    ry: number;
+    rz: number;
+  };
+
+  const [sliders, setSliders] = useState<BodyState>({
     tx: 0,
     ty: 0,
     tz: 0,
@@ -120,34 +140,39 @@ export default function FPVView({
     rz: 0,
   });
 
-  const [connected, setConnected] = useState(false);
-  const [connectError, setConnectError] = useState<string | null>(null);
-  const [lidarRunning, setLidarRunning] = useState(false);
-  const lastButtonsRef = useRef<boolean[]>([]);
-  const searchParams = useSearchParams();
-  const ipParam = searchParams.get("ip");
-  const DOG_SERVER = ipParam || DEFAULT_DOG_SERVER;
-    const lidarUrl = useMemo(() => {
-      try {
-        const url = new URL(DOG_SERVER);
-        url.port = "8080";          // đổi port
-        return url.toString();      // ví dụ: http://192.168.1.167:8080/
-      } catch {
-        // fallback nếu DOG_SERVER không phải URL hợp lệ
-        return "http://127.0.0.1:8080";
-      }
-    }, [DOG_SERVER]);
-  /* ===== BODY ADJUST (debounce) ===== */
-
   const bodyTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const setBody = (next: typeof sliders) => {
-    setSliders(next);
+  const updateBody = useCallback((partial: Partial<BodyState>) => {
+    setSliders((prev) => {
+      const next = { ...prev, ...partial };
+
+      if (bodyTimer.current) clearTimeout(bodyTimer.current);
+      bodyTimer.current = setTimeout(() => {
+        RobotAPI.body(next).catch(() => {
+          /* ignore */
+        });
+      }, 150);
+
+      return next;
+    });
+  }, []);
+
+  const resetBody = useCallback(() => {
+    const zero: BodyState = {
+      tx: 0,
+      ty: 0,
+      tz: 0,
+      rx: 0,
+      ry: 0,
+      rz: 0,
+    };
+
     if (bodyTimer.current) clearTimeout(bodyTimer.current);
-    bodyTimer.current = setTimeout(() => {
-      RobotAPI.body(next).catch(() => {});
-    }, 150);
-  };
+    setSliders(zero);
+    RobotAPI.body(zero).catch(() => {
+      /* ignore */
+    });
+  }, []);
 
   useEffect(
     () => () => {
@@ -169,7 +194,10 @@ export default function FPVView({
         if (res?.connected) {
           setConnected(true);
           setConnectError(null);
-
+          if (!hasResetBody.current) {
+            resetBody();                     
+            hasResetBody.current = true;     
+          }
           try {
             const f = await RobotAPI.fpv();
             if (!stop) setStreamUrl(f?.stream_url || null);
@@ -451,34 +479,61 @@ useEffect(() => {
           <SliderRow
             label="Translation_X"
             value={sliders.tx}
-            onChange={(v) => setBody({ ...sliders, tx: v })}
+            onChange={(v) => updateBody({ tx: v })}
           />
           <SliderRow
             label="Translation_Y"
             value={sliders.ty}
-            onChange={(v) => setBody({ ...sliders, ty: v })}
+            onChange={(v) => updateBody({ ty: v })}
           />
           <SliderRow
             label="Translation_Z"
             value={sliders.tz}
-            onChange={(v) => setBody({ ...sliders, tz: v })}
+            onChange={(v) => updateBody({ tz: v })}
           />
           <SliderRow
             label="Rotation_X"
             value={sliders.rx}
-            onChange={(v) => setBody({ ...sliders, rx: v })}
+            onChange={(v) => updateBody({ rx: v })}
           />
           <SliderRow
             label="Rotation_Y"
             value={sliders.ry}
-            onChange={(v) => setBody({ ...sliders, ry: v })}
+            onChange={(v) => updateBody({ ry: v })}
           />
           <SliderRow
             label="Rotation_Z"
             value={sliders.rz}
-            onChange={(v) => setBody({ ...sliders, rz: v })}
+            onChange={(v) => updateBody({ rz: v })}
           />
+
+          {/* Nút reset về giữa */}
+          <div className="mt-3 flex justify-end">
+            <button
+              onClick={resetBody}
+              className="
+                px-3 py-1.5 text-xs rounded-lg cursor-pointer font-semibold
+                border border-fuchsia-400/70
+                bg-fuchsia-500/15 text-fuchsia-100
+                shadow-sm shadow-black/40
+                transition-all duration-200
+
+                hover:bg-fuchsia-500
+                hover:text-[#0c0520]
+                hover:border-fuchsia-200
+                hover:shadow-xl hover:shadow-fuchsia-500/60
+                hover:-translate-y-0.5 hover:scale-105
+
+                active:scale-95 active:translate-y-0
+              "
+            >
+              Reset body to center
+            </button>
+
+
+          </div>
         </Panel>
+
 
         {/* RIGHT — Move + Posture/Behavior */}
         <div className="flex flex-col gap-6">
@@ -540,37 +595,91 @@ function Panel({
   );
 }
 
-function Btn({ label, onClick }: { label: string; onClick?: () => void }) {
+function Btn({
+  label,
+  variant = "default",
+  onClick,
+}: {
+  label: string;
+  variant?: "default" | "danger" | "success";
+  onClick?: () => void;
+}) {
+  const base =
+    "px-4 py-2 text-sm rounded-xl border font-medium cursor-pointer " +
+    "transition-all duration-200 transform select-none";
+
+  let styles = "";
+
+  if (variant === "danger") {
+    styles = [
+      "bg-rose-600/70 border-rose-400 text-white",
+      "hover:bg-rose-400 hover:border-rose-200",
+      "hover:shadow-xl hover:shadow-rose-500/50",
+      "hover:-translate-y-0.5 hover:scale-[1.03]",
+      "active:scale-95 active:translate-y-0",
+    ].join(" ");
+  } else if (variant === "success") {
+    styles = [
+      "bg-emerald-600/70 border-emerald-400 text-white",
+      "hover:bg-emerald-400 hover:border-emerald-200",
+      "hover:shadow-xl hover:shadow-emerald-500/50",
+      "hover:-translate-y-0.5 hover:scale-[1.03]",
+      "active:scale-95 active:translate-y-0",
+    ].join(" ");
+  } else {
+    // DEFAULT BUTTON STYLE — cho các posture, axis motion, behavior
+    styles = [
+      "bg-white/10 border-white/20 text-white",
+      "hover:bg-fuchsia-500 hover:text-[#0c0520] hover:border-fuchsia-200",
+      "hover:shadow-xl hover:shadow-fuchsia-500/50",
+      "hover:-translate-y-0.5 hover:scale-[1.04]",
+      "active:scale-95 active:translate-y-0",
+    ].join(" ");
+  }
+
   return (
-    <button
-      onClick={onClick}
-      className="inline-flex items-center justify-center px-4 py-2 rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 transition text-sm font-medium whitespace-nowrap min-w-[120px]"
-    >
+    <button onClick={onClick} className={`${base} ${styles}`}>
       {label}
     </button>
   );
 }
 
+
 function SliderRow({
   label,
   value,
   onChange,
+  min = -100,
+  max = 100,
 }: {
   label: string;
   value: number;
   onChange: (v: number) => void;
+  min?: number;
+  max?: number;
 }) {
   return (
-    <div className="mb-4">
-      <div className="text-sm mb-1 opacity-80">{label}</div>
+    <div className="mb-3">
+      <div className="flex items-center justify-between text-xs mb-1">
+        <span className="opacity-75">{label}</span>
+        <span className="font-mono opacity-70">
+          <span className="text-fuchsia-300 text-[20px]">{value}</span>
+        </span>
+      </div>
+      <div className="flex">
+      -100
       <input
         type="range"
-        min={-100}
-        max={100}
+        min={min}
+        max={max}
         value={value}
         onChange={(e) => onChange(Number(e.target.value))}
-        className="w-full accent-fuchsia-400"
+        className="w-full mx-2 accent-fuchsia-400 cursor-pointer "
       />
+      100
+      </div>
+
     </div>
   );
 }
+

@@ -12,6 +12,10 @@ const LIN_V = 0.35;      // tốc độ tịnh tiến tối đa
 const YAW_SENS = 0.003;  // độ nhạy xoay chuột
 const MAX_YAW = 1.0;     // giới hạn tốc độ quay
 
+const TICK_MS = 50;      // chu kỳ gửi lệnh
+const YAW_TIMEOUT = 80;  // nếu không có mousemove trong X ms -> rz = 0
+const MOUSE_DEADZONE = 0.5;
+
 export default function MouselookPad({ enabled }: Props) {
   const overlayRef = useRef<HTMLDivElement | null>(null);
   const [locked, setLocked] = useState(false);
@@ -23,6 +27,17 @@ export default function MouselookPad({ enabled }: Props) {
     s: false,
     a: false,
     d: false,
+  });
+
+  // yaw hiện tại (rad/s) từ chuột
+  const yawRef = useRef(0);
+  const lastMouseMoveTsRef = useRef<number>(0);
+
+  // lệnh cuối cùng đã gửi để tránh gửi trùng
+  const lastCmdRef = useRef<{ vx: number; vy: number; rz: number }>({
+    vx: 0,
+    vy: 0,
+    rz: 0,
   });
 
   // ===== helper: vx, vy từ W/S/A/D =====
@@ -52,19 +67,21 @@ export default function MouselookPad({ enabled }: Props) {
     };
   };
 
-  const sendMove = (rz: number) => {
-    const { vx, vy, active } = getVelFromKeys();
-    if (!active && rz === 0) {
-      RobotAPI.move({
-        vx: 0,
-        vy: 0,
-        vz: 0,
-        rx: 0,
-        ry: 0,
-        rz: 0,
-      }).catch(() => {});
+  const nearlyEqual = (a: number, b: number, eps = 1e-3) =>
+    Math.abs(a - b) < eps;
+
+  const sendCommand = (vx: number, vy: number, rz: number) => {
+    const last = lastCmdRef.current;
+    // nếu giống hệt lệnh cũ thì không gửi nữa
+    if (
+      nearlyEqual(vx, last.vx) &&
+      nearlyEqual(vy, last.vy) &&
+      nearlyEqual(rz, last.rz)
+    ) {
       return;
     }
+
+    lastCmdRef.current = { vx, vy, rz };
 
     RobotAPI.move({
       vx,
@@ -78,6 +95,10 @@ export default function MouselookPad({ enabled }: Props) {
 
   const stopMove = () => {
     keysRef.current = { w: false, s: false, a: false, d: false };
+    yawRef.current = 0;
+    lastMouseMoveTsRef.current = 0;
+    lastCmdRef.current = { vx: 0, vy: 0, rz: 0 };
+
     RobotAPI.move({
       vx: 0,
       vy: 0,
@@ -88,7 +109,7 @@ export default function MouselookPad({ enabled }: Props) {
     }).catch(() => {});
   };
 
-  // ===== Pointer lock: mousemove trên document =====
+  // ===== Pointer lock: mousemove trên document (chỉ cập nhật yawRef) =====
   useEffect(() => {
     if (!enabled) {
       if (document.pointerLockElement === overlayRef.current) {
@@ -103,14 +124,17 @@ export default function MouselookPad({ enabled }: Props) {
     const handleMouseMove = (e: MouseEvent) => {
       if (!pointerLockedRef.current) return;
 
-      const movementX = e.movementX || 0;
-      if (!movementX) return;
+      const dx = e.movementX || 0;
 
-      let rz = -movementX * YAW_SENS; // đảo dấu nếu ngược cảm giác
+      // deadzone: giảm rung cảm biến
+      if (Math.abs(dx) < MOUSE_DEADZONE) return;
+
+      let rz = -dx * YAW_SENS;
       if (rz > MAX_YAW) rz = MAX_YAW;
       if (rz < -MAX_YAW) rz = -MAX_YAW;
 
-      sendMove(rz);
+      yawRef.current = rz;
+      lastMouseMoveTsRef.current = performance.now();
     };
 
     const handleLockChange = () => {
@@ -129,6 +153,7 @@ export default function MouselookPad({ enabled }: Props) {
     return () => {
       document.removeEventListener("mousemove", handleMouseMove);
       document.removeEventListener("pointerlockchange", handleLockChange);
+
       if (document.pointerLockElement === overlayRef.current) {
         document.exitPointerLock();
       }
@@ -138,7 +163,44 @@ export default function MouselookPad({ enabled }: Props) {
     };
   }, [enabled]);
 
-  // ===== WASD =====
+  // ===== Loop gửi lệnh định kỳ (50ms) =====
+  useEffect(() => {
+    if (!enabled) {
+      stopMove();
+      return;
+    }
+
+    const id = setInterval(() => {
+      // Không pointer lock thì chỉ dừng (tránh robot trôi)
+      if (!pointerLockedRef.current) {
+        sendCommand(0, 0, 0);
+        return;
+      }
+
+      const { vx, vy, active } = getVelFromKeys();
+
+      let rz = yawRef.current;
+      const now = performance.now();
+
+      // Nếu lâu rồi không có mousemove -> rz = 0
+      if (!lastMouseMoveTsRef.current || now - lastMouseMoveTsRef.current > YAW_TIMEOUT) {
+        rz = 0;
+        yawRef.current = 0;
+      }
+
+      if (!active && rz === 0) {
+        // không có di chuyển -> gửi stop 1 lần nếu cần
+        sendCommand(0, 0, 0);
+        return;
+      }
+
+      sendCommand(vx, vy, rz);
+    }, TICK_MS);
+
+    return () => clearInterval(id);
+  }, [enabled]);
+
+  // ===== WASD + Space =====
   useEffect(() => {
     if (!enabled) return;
 
@@ -152,6 +214,13 @@ export default function MouselookPad({ enabled }: Props) {
           target.tagName === "TEXTAREA" ||
           target.getAttribute("contenteditable") === "true")
       ) {
+        return;
+      }
+
+      // Emergency stop: Space (luôn hoạt động khi enabled)
+      if (key === " " || key === "spacebar") {
+        e.preventDefault();
+        stopMove();
         return;
       }
 
@@ -189,7 +258,7 @@ export default function MouselookPad({ enabled }: Props) {
 
       if (changed) {
         e.preventDefault();
-        sendMove(0); // chỉ update vx, vy
+        // loop 50ms sẽ tự đọc keysRef và gửi lệnh
       }
     };
 
@@ -230,7 +299,7 @@ export default function MouselookPad({ enabled }: Props) {
 
       if (changed) {
         e.preventDefault();
-        sendMove(0);
+        // loop 50ms sẽ tự xử lý lấy vx,vy mới
       }
     };
 
